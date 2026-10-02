@@ -60,9 +60,11 @@ def load_config_for(key: str, file: Path|str) -> ConfigManager:
     with open(Path(file).resolve(), 'rb') as f:
         _conf = tomllib.load(f) or {}
 
-    _conf = {k.upper(): v for k, v in _conf.items()}
     conf = ConfigManager()
-    conf.from_dict(_conf.get(key.upper(), {}))
+    for k, v in _conf.items():
+        if k.upper() == key.upper():
+            conf.from_dict(v)
+            break
 
     return conf
 
