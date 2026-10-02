@@ -84,6 +84,8 @@ class Vault:
 
             self.get_catalog().touch(exist_ok=True)
 
+        # TODO create sqlite db strtucture
+
 
     @property
     def is_created(self) -> bool:
@@ -100,6 +102,7 @@ class Vault:
             ]
         )
 
+        # TODO check if sqlite struturce exists
 
     def load(
         self,
@@ -120,13 +123,17 @@ class Vault:
                     "UUID"
                 ]
             )
-            
+
         self._config = self._config or ConfigManager()
         self._config.set("KEY", self.get_key())
 
-        self._container = Path(
-            self._config.get("CONTAINER", self.get_container())
-        ).resolve()
+        try:
+            self._container = Path(
+                self._config.get("CONTAINER", self.get_container())
+            ).resolve()
+        except TypeError as exc:
+            raise InvalidVaultContainer("Vault key cannot be null.") from exc
+
         self._uuid = get_vault_uuid(self.get_key(), self.get_container())
         self._root = self.get_container() / self.get_uuid()
 
@@ -148,12 +155,12 @@ class Vault:
                     shutil.rmtree(self.get_root())
                     flag = True
                 else:
-                    logger.warn("Cannot delete a non-empty vault. Use "
+                    logger.warning("Cannot delete a non-empty vault. Use "
                     "force=True if this is intentional.")
             else:
                 shutil.rmtree(self.get_root())
                 flag = True
-            
+
         return flag
 
 

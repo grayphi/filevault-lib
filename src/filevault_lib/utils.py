@@ -20,4 +20,4 @@ def get_vault_uuid(key: str, container: Path) -> str:
             Path(container / key).as_posix()
         ) if (key and container) else None
     )
-    
+
