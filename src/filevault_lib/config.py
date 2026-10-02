@@ -6,6 +6,8 @@
 import logging
 import uuid
 import tomllib
+from pathlib import Path
+
 
 logger = logging.getLogger(__name__)
 
@@ -25,20 +27,42 @@ class ConfigManager:
     def get(self, k: str, d: Any = None) -> Any:
         return getattr(self, k.upper(), d)
 
-    def set(self, k: str, v: Any):
+    def set(self, k: str, v: Any) -> None:
         setattr(self, k.upper(), v)
 
     def to_dict(self) -> dict:
         return {k: self.get(k) for k in dir(self) if k.isupper()}
 
-    def unset(self, k: str):
+    def unset(self, k: str) -> None:
         try:
             delattr(self, k.upper())
         except AttributeError:
             pass
 
+    def from_dict(self, d: dict, exclude: list = []) -> None:
+        if d:
+            ex = [i.upper() for i in exclude]
+            for k in d.keys():
+                if k.upper() not in ex:
+                    self.set(k, d.get(k))
+
+    def copy_form(self, c: ConfigManager, exclude: list = []) -> None:
+        if c:
+            self.from_dict(c.to_dict(), exclude)
 
 
-current_config = ConfigManager()
+def load_config_for(key: str, file: Path|str) -> ConfigManager:
+    with open(Path(file).resolve(), 'rb') as f:
+        _conf = tomllib.load(f) or {}
+
+    _conf = {k.upper(): v for k, v in _conf.items()}
+    conf = ConfigManager()
+    conf.from_dict(_conf.get(key.upper(), {}))
+
+    return conf
+
+
+def save_config_to(file: Path|str) -> None:
+    pass
 
 
