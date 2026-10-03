@@ -97,7 +97,7 @@ class Vault:
                 self.get_cache_root()
             ]
         ) and all(
-            p.exists() and p.is_file for p in [
+            p.exists() and p.is_file() for p in [
                 self.get_catalog()
             ]
         )
