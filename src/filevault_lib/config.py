@@ -10,6 +10,8 @@ from pathlib import Path
 
 from typing import Any
 
+from filevault_lib.exceptions import InvalidConfigFile
+
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +49,9 @@ class ConfigManager:
             return
 
         ex = [i.upper() for i in exclude or []]
-        for k in d.keys():
+        for k, v in d.items():
             if k.upper() not in ex:
-                self.set(k, d.get(k))
+                self.set(k, v)
 
     def copy_form(self, c: ConfigManager, exclude: list = None) -> None:
         if c:
@@ -57,7 +59,15 @@ class ConfigManager:
 
 
 def load_config_for(key: str, file: Path|str) -> ConfigManager:
-    with open(Path(file).resolve(), 'rb') as f:
+    file = Parh(file).resolve()
+
+    if not (file.exists()
+        and file.is_file()
+        and file.suffix in [".vault", ".toml"]
+    ):
+        raise InvalidConfigFile("Configuration file supplied is not valid.")
+    
+    with open(file, 'rb') as f:
         _conf = tomllib.load(f) or {}
 
     conf = ConfigManager()
