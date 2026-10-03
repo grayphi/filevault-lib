@@ -22,7 +22,7 @@ from filevault_lib.exceptions import (
 logger = logging.getLogger(__name__)
 
 
-class Vault:
+class Vault:                          # pylint: disable=too-many-public-methods
     def __init__(self, key: str, container: str | Path = None) -> None:
         if not key:
             raise InvalidVaultKey("Vault key cannot be null.")
@@ -179,7 +179,7 @@ class Vault:
         save_config_to(to_file)
 
 
-    def open(self) -> None
+    def open(self) -> None:
         # initiate sqlite and connection objects
         pass
 
