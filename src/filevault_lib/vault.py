@@ -13,8 +13,11 @@ from filevault_lib.config import (
     save_config_to
 )
 from filevault_lib.utils import get_vault_uuid
-from filevault_lib.exceptions import InvalidVaultKey, InvalidVaultContainer
-
+from filevault_lib.exceptions import (
+    InvalidVaultKey,
+    InvalidVaultContainer,
+    VaultNotLoadedError
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,19 +56,19 @@ class Vault:
 
 
     def get_files_root(self) -> Path:
-        return self.get_root() / 'files'
+        return self.get_root() / 'files' if self.get_root() else None
 
 
     def get_shards_root(self) -> Path:
-        return self.get_root() / 'shards'
+        return self.get_root() / 'shards' if self.get_root() else None
 
 
     def get_cache_root(self) -> Path:
-        return self.get_root() / 'cache'
+        return self.get_root() / 'cache' if self.get_root() else None
 
 
     def get_catalog(self) -> Path:
-        return self.get_root() / 'catalog.db'
+        return self.get_root() / 'catalog.db' if self.get_root() else None
 
 
     def get_config(self) -> ConfigManager:
@@ -84,25 +87,30 @@ class Vault:
 
             self.get_catalog().touch(exist_ok=True)
 
-        # TODO create sqlite db strtucture
+            # TODO create sqlite db strtucture
+        else:
+            raise VaultNotLoadedError(
+                "Cannot create vault: configuration is not loaded."
+            )
 
 
     @property
     def is_created(self) -> bool:
-        return self.get_root() and all(
-            p.exists() and p.is_dir() for p in [
-                self.get_root(),
-                self.get_files_root(),
-                self.get_shards_root(),
-                self.get_cache_root()
-            ]
-        ) and all(
-            p.exists() and p.is_file() for p in [
-                self.get_catalog()
-            ]
+        return bool(
+            self.get_root() and all(
+                p.exists() and p.is_dir() for p in [
+                    self.get_root(),
+                    self.get_files_root(),
+                    self.get_shards_root(),
+                    self.get_cache_root()
+                ]
+            ) and all(
+                p.exists() and p.is_file() for p in [
+                    self.get_catalog()
+                ]
+            )
+            # TODO check if sqlite struturce exists
         )
-
-        # TODO check if sqlite struturce exists
 
     def load(
         self,
@@ -119,7 +127,6 @@ class Vault:
                 exclude=[
                     "KEY",
                     "CONTAINER",
-                    "ROOT",
                     "UUID"
                 ]
             )
@@ -137,7 +144,6 @@ class Vault:
         self._root = self.get_container() / self.get_uuid()
 
         self._config.set("CONTAINER", self.get_container())
-        self._config.set("ROOT", self.get_root())
         self._config.set("UUID", self.get_uuid())
 
 
@@ -159,6 +165,10 @@ class Vault:
             else:
                 shutil.rmtree(self.get_root())
                 flag = True
+        else:
+            raise VaultNotLoadedError(
+                "Cannot delete vault: configuration is not loaded."
+            )
 
         return flag
 

@@ -80,6 +80,5 @@ def load_config_for(key: str, file: Path|str) -> ConfigManager:
 
 
 def save_config_to(file: Path|str) -> None:  # pylint: disable=unused-argument
-    pass
-
+    raise NotImplementedError
 

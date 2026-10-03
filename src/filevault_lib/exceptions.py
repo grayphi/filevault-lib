@@ -15,6 +15,13 @@ class InvalidVaultKey(Exception):
 class InvalidVaultContainer(Exception):
     pass
 
+
 class InvalidConfigFile(Exception):
     pass
+
+
+class VaultNotLoadedError(Exception):
+    pass
+
+
 
