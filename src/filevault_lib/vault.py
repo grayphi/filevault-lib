@@ -151,6 +151,8 @@ class Vault:
         flag = False
 
         if self.is_created:
+            self.close()
+
             if any(any(p.iterdir()) for p in [
                 self.get_files_root(),
                 self.get_shards_root(),
@@ -177,6 +179,44 @@ class Vault:
         save_config_to(to_file)
 
 
+    def open(self) -> None
+        # initiate sqlite and connection objects
+        pass
 
 
+    def close(self) -> None:
+        # TODO closes sqlite and connection objects
+        pass
+
+
+    def put(self, file, meta: dict = None, compress=None, encrypt=None) -> str:
+        pass
+
+
+    def get(self, key: str):
+        pass
+
+
+    def put_s(self, stream, meta: dict = None) -> str:
+        pass
+
+
+    def get_s(self, key: str):
+        pass
+
+
+    def query():
+        pass
+
+
+    def sync():
+        pass
+
+
+    def export_to():
+        pass
+
+
+    def import_from():
+        pass
 
