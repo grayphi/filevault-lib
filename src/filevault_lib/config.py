@@ -59,14 +59,14 @@ class ConfigManager:
 
 
 def load_config_for(key: str, file: Path|str) -> ConfigManager:
-    file = Parh(file).resolve()
+    file = Path(file).resolve()
 
     if not (file.exists()
         and file.is_file()
         and file.suffix in [".vault", ".toml"]
     ):
         raise InvalidConfigFile("Configuration file supplied is not valid.")
-    
+
     with open(file, 'rb') as f:
         _conf = tomllib.load(f) or {}
 
