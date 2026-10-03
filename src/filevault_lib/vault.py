@@ -112,8 +112,8 @@ class Vault:
         if conf_file:
             self._config = load_config_for(self.get_key(), conf_file)
 
+        self._config = self._config or ConfigManager()
         if conf:
-            self._config = self._config or ConfigManager()
             self._config.copy_form(
                 conf,
                 exclude=[
@@ -124,7 +124,6 @@ class Vault:
                 ]
             )
 
-        self._config = self._config or ConfigManager()
         self._config.set("KEY", self.get_key())
 
         try:
