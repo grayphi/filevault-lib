@@ -20,8 +20,10 @@ def create_engine_on(loc: str | Path):
     if not loc:
         raise InvalidVaultDb("Invalid vault database location.")
 
-    # FIXME: change echo=False later
-    return create_engine(path2url(Path(loc).resolve()), echo=True)
+    return create_engine(
+        path2url(Path(loc).resolve()),
+        echo=logger.isEnabledFor(logging.DEBUG)
+    )
 
 
 def get_session_local(engine):
