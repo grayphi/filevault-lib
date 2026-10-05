@@ -21,3 +21,10 @@ def get_vault_uuid(key: str, container: Path) -> str:
         ) if (key and container) else None
     )
 
+def path2url(p: Path|str) -> str:
+    return (
+        "sqlite:///"
+        + Path(p).resolve().as_posix() if p else ""
+    )
+
+

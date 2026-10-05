@@ -4,37 +4,41 @@
 
 import logging
 import functools
-from functools import lru_cache
+from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
 
-from filevault_lib.config import current_config
-from filevault_lib.exceptions import InvalidVaultKey
+from filevault_lib.utils import path2url
+from filevault_lib.exceptions import InvalidVaultDb
+
 
 
 logger = logging.getLogger(__name__)
 
 
-@lru_cache
-def get_engine(key: str):
-    if not key:
-        raise InvalidVaultKey("Vault key cannot be null.")
+def create_engine_on(loc: str|Path):
+    if not loc:
+        raise InvalidVaultDb("Invalid vault database location.")
 
-    return create_engine(
-        ,
-        echo=current_app.debug
-    )
-
-engine = get_engine()
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-Base = declarative_base()
+    # FIXME: change echo=False later
+    return create_engine(path2url(Path(loc).resolve()), echo=True)
 
 
-def get_session():
-    s = SessionLocal()
+def get_session_local(engine):
+    return sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def get_base():
+    return declarative_base()
+
+
+def create_schema_on(base, engine):
+    base.metadata.create_all(bind=engine)
+
+
+def get_session_from(session_local):
+    s = session_local()
 
     try:
         with s.begin():
@@ -44,10 +48,6 @@ def get_session():
             s.close()
         except Exception:              # pylint: disable=broad-exception-caught
             pass
-
-
-def create_schema():
-    Base.metadata.create_all(bind=get_engine())
 
 
 def transactional(func):
@@ -67,4 +67,5 @@ def transactional(func):
             sp.rollback()
             raise
     return wrapper
+
 

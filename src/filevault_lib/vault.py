@@ -18,11 +18,23 @@ from filevault_lib.exceptions import (
     InvalidVaultContainer,
     VaultNotLoadedError
 )
+from filevault_lib.sqla import (
+    create_engine_on,
+    get_session_local,
+    get_base,
+    create_schema_on,
+    get_session_from
+)
+
+from filevault_lib.orm import create_orm
+
+
 
 logger = logging.getLogger(__name__)
 
 
 class Vault:                          # pylint: disable=too-many-public-methods
+                                #  pylint: disable=too-many-instance-attributes
     def __init__(self, key: str, container: str | Path = None) -> None:
         if not key:
             raise InvalidVaultKey("Vault key cannot be null.")
@@ -179,14 +191,30 @@ class Vault:                          # pylint: disable=too-many-public-methods
         save_config_to(to_file)
 
 
+    def _sqla(self) -> None:
+        self._db_engine = create_engine_on(self.get_catalog())
+        self._session_local = get_session_local(self._db_engine)
+        self._base_sql_class = get_base()
+
+        create_orm(self._base_sql_class)
+
+        create_schema_on(self._base_sql_class, self._db_engine)
+
+
     def open(self) -> None:
-        # initiate sqlite and connection objects
-        pass
+        self._sqla()
 
 
     def close(self) -> None:
-        # TODO closes sqlite and connection objects
-        pass
+        if hasattr(self, "_db_engine"):
+            self._db_engine.dispose()
+            del self._db_engine
+
+        if hasattr(self, "_sessionLocal"):
+            del self._sessionLocal
+
+        if hasattr(self, "_base_sql_class"):
+            del self._base_sql_class
 
 
     def put(self, file, meta: dict = None, compress=None, encrypt=None) -> str:
@@ -205,18 +233,18 @@ class Vault:                          # pylint: disable=too-many-public-methods
         pass
 
 
-    def query():
+    def query(self):
         pass
 
 
-    def sync():
+    def sync(self):
         pass
 
 
-    def export_to():
+    def export_to(self):
         pass
 
 
-    def import_from():
+    def import_from(self):
         pass
 

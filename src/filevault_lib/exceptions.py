@@ -24,4 +24,12 @@ class VaultNotLoadedError(Exception):
     pass
 
 
+class InvalidVaultDb(Exception):
+    pass
+
+
+class BaseNotDeclaredError(Exception):
+    pass
+
+
 
