@@ -20,6 +20,7 @@ from filevault_lib.exceptions import (
     VaultNotLoadedError,
     VaultNotOpenError,
     VaultNotClosedError,
+    NonEmptyVaultError,
 )
 from filevault_lib.sqla import (
     create_engine_on,
@@ -171,6 +172,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
         flag = False
 
         if not self.is_created:
+            # FIXME should return
             raise VaultNotCreatedError("Vault is not created yet.")
 
         if self.is_open:
@@ -186,6 +188,10 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 flag = True
             else:
                 logger.warning(
+                    "Cannot delete a non-empty vault. Use "
+                    "force=True if this is intentional."
+                )
+                raise NonEmptyVaultError(
                     "Cannot delete a non-empty vault. Use "
                     "force=True if this is intentional."
                 )
@@ -237,13 +243,14 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
     def close(self) -> None:
         if not self.is_open:
+            # FIXME should return
             raise VaultNotOpenError("Vault is not open.")
 
-            self._db_engine.dispose()
+        self._db_engine.dispose()
 
-            del self._db_engine
-            del self._session_local
-            del self._base_sql_class
+        del self._db_engine
+        del self._session_local
+        del self._base_sql_class
 
 
     def put(self, file, meta: dict = None, compress=None, encrypt=None) -> str:

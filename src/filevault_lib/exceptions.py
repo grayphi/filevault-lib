@@ -42,3 +42,8 @@ class VaultNotOpenError(Exception):
 
 class VaultNotClosedError(Exception):
     pass
+
+
+class NonEmptyVaultError(Exception):
+    pass
+
