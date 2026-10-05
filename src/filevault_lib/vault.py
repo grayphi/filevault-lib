@@ -16,7 +16,10 @@ from filevault_lib.utils import get_vault_uuid
 from filevault_lib.exceptions import (
     InvalidVaultKey,
     InvalidVaultContainer,
+    VaultNotCreatedError,
     VaultNotLoadedError,
+    VaultNotOpenError,
+    VaultNotClosedError,
 )
 from filevault_lib.sqla import (
     create_engine_on,
@@ -87,46 +90,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
         return self._config
 
 
-    def create(self) -> None:
-        if self.get_root():
-            for p in [
-                self.get_root(),
-                self.get_files_root(),
-                self.get_shards_root(),
-                self.get_cache_root(),
-            ]:
-                p.mkdir(parents=True, exist_ok=True)
-
-            self.get_catalog().touch(exist_ok=True)
-
-            # TODO create sqlite db strtucture
-        else:
-            raise VaultNotLoadedError(
-                "Cannot create vault: configuration is not loaded."
-            )
-
-
-    @property
-    def is_created(self) -> bool:
-        return bool(
-            self.get_root()
-            and all(
-                p.exists()
-                and p.is_dir() for p in [
-                    self.get_root(),
-                    self.get_files_root(),
-                    self.get_shards_root(),
-                    self.get_cache_root(),
-                ]
-            ) and all(
-                p.exists()
-                and p.is_file() for p in [
-                    self.get_catalog(),
-                ]
-            )
-            # TODO check if sqlite struturce exists
-        )
-
     def load(
         self,
         conf_file: Path|str = None,
@@ -162,32 +125,73 @@ class Vault:                          # pylint: disable=too-many-public-methods
         self._config.set("UUID", self.get_uuid())
 
 
+    def save(self, to_file: Path|str) -> None:
+        save_config_to(to_file)
+
+
+    def create(self) -> None:
+        if self.get_root():
+            for p in [
+                self.get_root(),
+                self.get_files_root(),
+                self.get_shards_root(),
+                self.get_cache_root(),
+            ]:
+                p.mkdir(parents=True, exist_ok=True)
+
+            self.get_catalog().touch(exist_ok=True)
+        else:
+            raise VaultNotLoadedError(
+                "Cannot create vault: configuration is not loaded."
+            )
+
+
+    @property
+    def is_created(self) -> bool:
+        return bool(
+            self.get_root()
+            and all(
+                p.exists()
+                and p.is_dir() for p in [
+                    self.get_root(),
+                    self.get_files_root(),
+                    self.get_shards_root(),
+                    self.get_cache_root(),
+                ]
+            ) and all(
+                p.exists()
+                and p.is_file() for p in [
+                    self.get_catalog(),
+                ]
+            )
+        )
+
+
     def delete(self, force: bool = False) -> bool:
         flag = False
 
-        if self.is_created:
-            self.close()
+        if not self.is_created:
+            raise VaultNotCreatedError("Vault is not created yet.")
 
-            if any(any(p.iterdir()) for p in [
-                self.get_files_root(),
-                self.get_shards_root(),
-                self.get_cache_root()
-            ]):
-                if force:
-                    shutil.rmtree(self.get_root())
-                    flag = True
-                else:
-                    logger.warning(
-                        "Cannot delete a non-empty vault. Use "
-                        "force=True if this is intentional."
-                    )
-            else:
+        if self.is_open:
+            raise VaultNotClosedError("Cannot delete open vault.")
+
+        if any(any(p.iterdir()) for p in [
+            self.get_files_root(),
+            self.get_shards_root(),
+            self.get_cache_root()
+        ]):
+            if force:
                 shutil.rmtree(self.get_root())
                 flag = True
+            else:
+                logger.warning(
+                    "Cannot delete a non-empty vault. Use "
+                    "force=True if this is intentional."
+                )
         else:
-            raise VaultNotLoadedError(
-                "Cannot delete vault: configuration is not loaded."
-            )
+            shutil.rmtree(self.get_root())
+            flag = True
 
         if flag:
             self._uuid = None
@@ -198,13 +202,12 @@ class Vault:                          # pylint: disable=too-many-public-methods
         return flag
 
 
-    def save(self, to_file: Path|str) -> None:
-        save_config_to(to_file)
-
-
     def _sqla(self) -> None:
+                               # pylint: disable=attribute-defined-outside-init
         self._db_engine = create_engine_on(self.get_catalog())
+                               # pylint: disable=attribute-defined-outside-init
         self._session_local = get_session_local(self._db_engine)
+                               # pylint: disable=attribute-defined-outside-init
         self._base_sql_class = get_base()
 
         create_orm(self._base_sql_class)
@@ -213,18 +216,33 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
 
     def open(self) -> None:
+        if not self.is_created:
+            raise VaultNotCreatedError("Vault is not created yet.")
+
         self._sqla()
+        # FIXME create record for its opened status
+
+
+    @property
+    def is_open(self) -> bool:
+        return all(
+            hasattr(self, attr) and attr is not None
+            for attr in [
+                "_db_engine",
+                "_session_local",
+                "_base_sql_class",
+            ]
+        )
 
 
     def close(self) -> None:
-        if hasattr(self, "_db_engine"):
+        if not self.is_open:
+            raise VaultNotOpenError("Vault is not open.")
+
             self._db_engine.dispose()
+
             del self._db_engine
-
-        if hasattr(self, "_sessionLocal"):
-            del self._sessionLocal
-
-        if hasattr(self, "_base_sql_class"):
+            del self._session_local
             del self._base_sql_class
 
 
