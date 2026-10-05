@@ -58,7 +58,7 @@ class ConfigManager:
             self.from_dict(c.to_dict(), exclude)
 
 
-def load_config_for(key: str, file: Path|str) -> ConfigManager:
+def load_config_for(key: str, file: Path | str) -> ConfigManager:
     file = Path(file).resolve()
 
     if not (file.exists()
@@ -67,7 +67,7 @@ def load_config_for(key: str, file: Path|str) -> ConfigManager:
     ):
         raise InvalidConfigFile("Configuration file supplied is not valid.")
 
-    with open(file, 'rb') as f:
+    with open(file, "rb") as f:
         _conf = tomllib.load(f) or {}
 
     conf = ConfigManager()
@@ -79,6 +79,6 @@ def load_config_for(key: str, file: Path|str) -> ConfigManager:
     return conf
 
 
-def save_config_to(file: Path|str) -> None:  # pylint: disable=unused-argument
+def save_config_to(file: Path | str) -> None:  # pylint: disable=unused-argument
     raise NotImplementedError
 

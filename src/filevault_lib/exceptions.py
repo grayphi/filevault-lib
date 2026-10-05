@@ -30,6 +30,3 @@ class InvalidVaultDb(Exception):
 
 class BaseNotDeclaredError(Exception):
     pass
-
-
-

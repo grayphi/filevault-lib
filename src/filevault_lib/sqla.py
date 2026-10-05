@@ -13,11 +13,10 @@ from filevault_lib.utils import path2url
 from filevault_lib.exceptions import InvalidVaultDb
 
 
-
 logger = logging.getLogger(__name__)
 
 
-def create_engine_on(loc: str|Path):
+def create_engine_on(loc: str | Path):
     if not loc:
         raise InvalidVaultDb("Invalid vault database location.")
 
@@ -66,6 +65,5 @@ def transactional(func):
             )
             sp.rollback()
             raise
+
     return wrapper
-
-

@@ -10,20 +10,20 @@ from pathlib import Path
 from filevault_lib.config import (
     ConfigManager,
     load_config_for,
-    save_config_to
+    save_config_to,
 )
 from filevault_lib.utils import get_vault_uuid
 from filevault_lib.exceptions import (
     InvalidVaultKey,
     InvalidVaultContainer,
-    VaultNotLoadedError
+    VaultNotLoadedError,
 )
 from filevault_lib.sqla import (
     create_engine_on,
     get_session_local,
     get_base,
     create_schema_on,
-    get_session_from
+    get_session_from,
 )
 
 from filevault_lib.orm import create_orm
@@ -68,19 +68,19 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
 
     def get_files_root(self) -> Path:
-        return self.get_root() / 'files' if self.get_root() else None
+        return self.get_root() / "files" if self.get_root() else None
 
 
     def get_shards_root(self) -> Path:
-        return self.get_root() / 'shards' if self.get_root() else None
+        return self.get_root() / "shards" if self.get_root() else None
 
 
     def get_cache_root(self) -> Path:
-        return self.get_root() / 'cache' if self.get_root() else None
+        return self.get_root() / "cache" if self.get_root() else None
 
 
     def get_catalog(self) -> Path:
-        return self.get_root() / 'catalog.db' if self.get_root() else None
+        return self.get_root() / "catalog.db" if self.get_root() else None
 
 
     def get_config(self) -> ConfigManager:
@@ -93,7 +93,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 self.get_root(),
                 self.get_files_root(),
                 self.get_shards_root(),
-                self.get_cache_root()
+                self.get_cache_root(),
             ]:
                 p.mkdir(parents=True, exist_ok=True)
 
@@ -109,16 +109,19 @@ class Vault:                          # pylint: disable=too-many-public-methods
     @property
     def is_created(self) -> bool:
         return bool(
-            self.get_root() and all(
-                p.exists() and p.is_dir() for p in [
+            self.get_root()
+            and all(
+                p.exists()
+                and p.is_dir() for p in [
                     self.get_root(),
                     self.get_files_root(),
                     self.get_shards_root(),
-                    self.get_cache_root()
+                    self.get_cache_root(),
                 ]
             ) and all(
-                p.exists() and p.is_file() for p in [
-                    self.get_catalog()
+                p.exists()
+                and p.is_file() for p in [
+                    self.get_catalog(),
                 ]
             )
             # TODO check if sqlite struturce exists
@@ -174,8 +177,10 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     shutil.rmtree(self.get_root())
                     flag = True
                 else:
-                    logger.warning("Cannot delete a non-empty vault. Use "
-                    "force=True if this is intentional.")
+                    logger.warning(
+                        "Cannot delete a non-empty vault. Use "
+                        "force=True if this is intentional."
+                    )
             else:
                 shutil.rmtree(self.get_root())
                 flag = True

@@ -15,16 +15,11 @@ logger = logging.getLogger(__name__)
 
 def get_vault_uuid(key: str, container: Path) -> str:
     return str(
-        uuid.uuid5(
-            Constants.NAMESPACE,
-            Path(container / key).as_posix()
-        ) if (key and container) else None
-    )
-
-def path2url(p: Path|str) -> str:
-    return (
-        "sqlite:///"
-        + Path(p).resolve().as_posix() if p else ""
+        uuid.uuid5(Constants.NAMESPACE, Path(container / key).as_posix())
+        if (key and container)
+        else None
     )
 
 
+def path2url(p: Path | str) -> str:
+    return "sqlite:///" + Path(p).resolve().as_posix() if p else ""
