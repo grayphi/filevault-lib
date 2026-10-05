@@ -46,7 +46,6 @@ class ORM:
 
 
 def create_orm(base) -> None:
-    _orm = ORM(base)
-    _orm.init()
+    ORM(base).init()
 
 

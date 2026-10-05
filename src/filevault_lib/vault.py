@@ -184,6 +184,12 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 "Cannot delete vault: configuration is not loaded."
             )
 
+        if flag:
+            self._uuid = None
+            self._container = None
+            self._root = None
+            self._config = None
+
         return flag
 
 
