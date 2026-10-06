@@ -5,6 +5,7 @@
 import logging
 import functools
 from pathlib import Path
+from contextlib import contextmanager
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
@@ -15,6 +16,8 @@ from filevault_lib.exceptions import InvalidVaultDb
 
 logger = logging.getLogger(__name__)
 
+
+Base = declarative_base()
 
 def create_engine_on(loc: str | Path):
     if not loc:
@@ -30,14 +33,11 @@ def get_session_local(engine):
     return sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-def get_base():
-    return declarative_base()
+def create_schema_on(engine):
+    Base.metadata.create_all(bind=engine)
 
 
-def create_schema_on(base, engine):
-    base.metadata.create_all(bind=engine)
-
-
+@contextmanager
 def get_session_from(session_local):
     s = session_local()
 
@@ -45,10 +45,7 @@ def get_session_from(session_local):
         with s.begin():
             yield s
     finally:
-        try:
-            s.close()
-        except Exception:              # pylint: disable=broad-exception-caught
-            pass
+        s.close()
 
 
 def transactional(func):
@@ -69,3 +66,4 @@ def transactional(func):
             raise
 
     return wrapper
+

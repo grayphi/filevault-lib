@@ -25,12 +25,9 @@ from filevault_lib.exceptions import (
 from filevault_lib.sqla import (
     create_engine_on,
     get_session_local,
-    get_base,
     create_schema_on,
     get_session_from,
 )
-
-from filevault_lib.orm import create_orm
 
 
 
@@ -213,32 +210,51 @@ class Vault:                          # pylint: disable=too-many-public-methods
         self._db_engine = create_engine_on(self.get_catalog())
                                # pylint: disable=attribute-defined-outside-init
         self._session_local = get_session_local(self._db_engine)
-                               # pylint: disable=attribute-defined-outside-init
-        self._base_sql_class = get_base()
 
-        create_orm(self._base_sql_class)
+        from filevault_lib import orm
 
-        create_schema_on(self._base_sql_class, self._db_engine)
+        create_schema_on(self._db_engine)
 
 
     def open(self) -> None:
         if not self.is_created:
             raise VaultNotCreatedError("Vault is not created yet.")
 
+        if self.is_open:
+            return
+
         self._sqla()
-        # FIXME create record for its opened status
+
+        from filevault_lib.db import get_status, set_status
+
+        with get_session_from(self._session_local) as session:
+            status = get_status(session)
+
+        if status is None or status == "closed":
+            with get_session_from(self._session_local) as session:
+                set_status(session, "open")
+        else:
+            logger.debug("vault was not properly closed")
+            # FIXME
 
 
     @property
     def is_open(self) -> bool:
-        return all(
+        flag = all(
             hasattr(self, attr) and attr is not None
             for attr in [
                 "_db_engine",
                 "_session_local",
-                "_base_sql_class",
             ]
         )
+        if flag:
+            from filevault_lib.db import get_status
+
+            with get_session_from(self._session_local) as session:
+                status = get_status(session)
+            flag = bool(status and status == "open")
+
+        return flag
 
 
     def close(self) -> None:
@@ -246,11 +262,14 @@ class Vault:                          # pylint: disable=too-many-public-methods
             # FIXME should return
             raise VaultNotOpenError("Vault is not open.")
 
+        from filevault_lib.db import set_status
+        with get_session_from(self._session_local) as session:
+            set_status(session, "closed")
+
         self._db_engine.dispose()
 
         del self._db_engine
         del self._session_local
-        del self._base_sql_class
 
 
     def put(self, file, meta: dict = None, compress=None, encrypt=None) -> str:

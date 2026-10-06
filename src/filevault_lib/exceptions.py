@@ -32,10 +32,6 @@ class InvalidVaultDb(Exception):
     pass
 
 
-class BaseNotDeclaredError(Exception):
-    pass
-
-
 class VaultNotOpenError(Exception):
     pass
 
@@ -45,5 +41,9 @@ class VaultNotClosedError(Exception):
 
 
 class NonEmptyVaultError(Exception):
+    pass
+
+
+class DBException(Exception):
     pass
 

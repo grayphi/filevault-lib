@@ -12,40 +12,43 @@ from sqlalchemy.orm import (
     mapped_column
 )
 from sqlalchemy import (
-    Integer
+    String,
+    text,
+    UniqueConstraint,
+    Index,
 )
 
-from filevault_lib.exceptions import BaseNotDeclaredError
+from filevault_lib.sqla import Base
 
 
 logger = logging.getLogger(__name__)
 
 
-class ORM:
-    def __init__(self, base) -> None:
-        self._Base = base                        # pylint: disable=invalid-name
+_TABLE_PREFIX_ = "__filevault_lib_"
 
+@dataclass
+class RuntimeContextTable(Base):
+    __tablename__ = f"{_TABLE_PREFIX_}_RUNTIME_CONTEXT"
 
-    def init(self):
-        if not self._Base:
-            raise BaseNotDeclaredError("Invalid Base object.")
+    key: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        primary_key=True
+    )
+    value: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        server_default=text("''")
+    )
 
-        self.declare_testclass()
-
-
-    def declare_testclass(self):
-        @dataclass
-        class Testclass(self._Base):
-            __tablename__ = "Testclass"
-
-            uid: Mapped[int] = mapped_column(
-                Integer,
-                nullable=False,
-                primary_key=True
-            )
-
-
-def create_orm(base) -> None:
-    ORM(base).init()
-
+    __table_args__ = (
+        UniqueConstraint(
+            key,
+            name=f"{__tablename__}_uc_01"
+        ),
+        Index(
+            f"{__tablename__}_sc_idx_01",
+            key
+        )
+    )
 
