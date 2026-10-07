@@ -6,6 +6,11 @@
 import logging
 import uuid
 from pathlib import Path
+from enum import Enum
+import secrets
+import string
+import random
+from functools import lru_cache
 
 from filevault_lib.config import Constants
 
@@ -23,3 +28,24 @@ def get_vault_uuid(key: str, container: Path) -> str:
 
 def path2url(p: Path | str) -> str:
     return "sqlite:///" + Path(p).resolve().as_posix() if p else ""
+
+
+class KeyringRef(str, Enum):
+    UNALLOTED = "U"
+    OBJECT = "O"
+    FILES = "F"
+    SHARDS = "S"
+
+
+
+def generate_key():
+    @lru_cache(maxsize=1)
+    def u():
+        _u = list(string.ascii_letters + string.digits)
+        random.shuffle(_u)
+        return _u
+
+    return "".join(
+        secrets.choice(u()) for _ in range(secrets.randbelow(123) + 6)
+    )
+

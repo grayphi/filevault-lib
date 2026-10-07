@@ -28,7 +28,8 @@ from filevault_lib.sqla import (
     create_schema_on,
     get_session_from,
 )
-
+from filevault_lib import orm                   # pylint: disable=unused-import
+from filevault_lib.db import get_status, set_status
 
 
 logger = logging.getLogger(__name__)
@@ -211,8 +212,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
                                # pylint: disable=attribute-defined-outside-init
         self._session_local = get_session_local(self._db_engine)
 
-        from filevault_lib import orm
-
         create_schema_on(self._db_engine)
 
 
@@ -224,8 +223,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
             return
 
         self._sqla()
-
-        from filevault_lib.db import get_status, set_status
 
         with get_session_from(self._session_local) as session:
             status = get_status(session)
@@ -248,8 +245,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
             ]
         )
         if flag:
-            from filevault_lib.db import get_status
-
             with get_session_from(self._session_local) as session:
                 status = get_status(session)
             flag = bool(status and status == "open")
@@ -262,7 +257,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
             # FIXME should return
             raise VaultNotOpenError("Vault is not open.")
 
-        from filevault_lib.db import set_status
         with get_session_from(self._session_local) as session:
             set_status(session, "closed")
 

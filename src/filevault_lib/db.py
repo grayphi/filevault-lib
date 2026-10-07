@@ -10,6 +10,7 @@ from sqlalchemy import (
     update,
     delete,
 )
+from sqlalchemy.exc import IntegrityError
 
 from filevault_lib.sqla import Session, transactional
 from filevault_lib.orm import RuntimeContextTable
@@ -33,7 +34,7 @@ def get_runtime_context_var(session: Session, key: str) -> str:
         logger.exception(e)
         raise DBException(
             "Something unexpected happened, while fetching RuntimeContext."
-        )
+        ) from e
 
     return ctx_var_val
 
@@ -64,7 +65,7 @@ def set_runtime_context_var(
         logger.exception(e)
         raise DBException(
             "Something unexpected happened, while updating RuntimeContext var."
-        )
+        ) from e
 
     if not flag:
         logger.debug("Can't update value, trying creating new.")
@@ -81,7 +82,7 @@ def set_runtime_context_var(
             raise DBException(
                 "Something unexpected happened, while "
                 "creating RuntimeContext var."
-            )
+            ) from e
 
     return flag
 
@@ -106,7 +107,7 @@ def delete_runtime_context_var(session: Session, key: str) -> bool:
         raise DBException(
             "Something unexpected happened, while "
             "deleting RuntimeContext var."
-        )
+        ) from e
 
     return flag
 
