@@ -16,7 +16,6 @@ from sqlalchemy import (
     ForeignKey,
     JSON,
     Enum,
-    Boolean,
     LargeBinary,
     DateTime,
 )
@@ -25,7 +24,6 @@ from sqlalchemy.orm import (
     mapped_column
 )
 from sqlalchemy.sql import (
-    expression,
     func,
 )
 
@@ -115,12 +113,12 @@ class FileAttrs:                       # pylint: disable=too-few-public-methods
     created_on: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        server_default=func.now()
+        server_default=func.now()                # pylint: disable=not-callable
     )
     modified_on: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        server_default=func.now()
+        server_default=func.now()                # pylint: disable=not-callable
     )
 
 
