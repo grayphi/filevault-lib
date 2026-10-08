@@ -12,7 +12,15 @@ from filevault_lib.config import (
     load_config_for,
     save_config_to,
 )
-from filevault_lib.utils import get_vault_uuid
+from filevault_lib.utils import (
+    get_vault_uuid,
+    CompressAlgo,
+    EncryptAlgo,
+    compress,
+    decompress,
+    encrypt,
+    decrypt,
+)
 from filevault_lib.exceptions import (
     InvalidVaultKey,
     InvalidVaultContainer,
@@ -29,8 +37,11 @@ from filevault_lib.sqla import (
     get_session_from,
 )
 from filevault_lib import orm                   # pylint: disable=unused-import
-from filevault_lib.db import get_status, set_status
-
+from filevault_lib.db import (
+    get_status,
+    set_status,
+    add_object,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -266,11 +277,48 @@ class Vault:                          # pylint: disable=too-many-public-methods
         del self._session_local
 
 
-    def put(self, file, meta: dict = None, compress=None, encrypt=None) -> str:
+    def put(
+        self,
+        data: bytes | str,
+        user_meta: dict = {},
+        encrypt_algo: EncryptAlgo = EncryptAlgo.NONE,
+        encrypt_key: str = None,
+        compress_algo: CompressAlgo = CompressAlgo.NONE
+    ) -> str:
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+
+        return add_object(
+            compress(
+                encrypt(data, encrypt_algo, encrypt_key),
+                compress_algo
+            ),
+            user_meta,
+            encrypt_algo,
+            compress_algo
+        )
+
+
+    def get(
+        self,
+        key: str,
+        decrypt: bool = True,
+        decompress: bool = True
+    ) -> (bytes, dict):
         pass
 
 
-    def get(self, key: str):
+    def rm(
+        self,
+        key: str
+    ) -> bool:
+        pass
+
+    def put1_d(self, file, meta: dict = None, compress=None, encrypt=None) -> str:
+        pass
+
+
+    def get_d(self, key: str):
         pass
 
 

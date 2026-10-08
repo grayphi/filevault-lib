@@ -13,7 +13,20 @@ from sqlalchemy import (
 from sqlalchemy.exc import IntegrityError
 
 from filevault_lib.sqla import Session, transactional
-from filevault_lib.orm import RuntimeContextTable
+from filevault_lib.orm import (
+    RuntimeContextTable,
+    KeyringTable,
+    ObjectsTable,
+    FilesTable,
+    ShardsTable,
+    CacheTable,
+)
+from filevault_lib.utils import (
+    KeyringRef,
+    generate_key,
+    CompressAlgo,
+    EncryptAlgo,
+)
 from filevault_lib.exceptions import DBException
 
 
@@ -119,4 +132,38 @@ def get_status(session: Session) -> str:
 def set_status(session: Session, status: str) -> bool:
     return set_runtime_context_var(session, "status", status)
 
+
+@transactional
+def add_object(
+    session: Session,
+    data: bytes,
+    user_meta: dict,
+    encrypt_algo: str,
+    compress_algo: str
+) -> str:
+    while True:
+        k = KeyringTable(fwd_ref=KeyringRef.OBJECT)
+
+        try:
+            with session.begin_nested():
+                session.add(k)
+                session.flush()
+            break
+        except IntegrityError as e:
+            logger.debug("key collide, trying new")
+            continue
+
+    o = ObjectsTable(
+        key=k.key,
+        data=data,
+        size=len(data),
+        encrypt_algo=encrypt_algo,
+        compress_algo=compress_algo,
+        user_meta=user_meta
+    )
+
+    session.add(o)
+    session.flush()
+
+    return k.key
 

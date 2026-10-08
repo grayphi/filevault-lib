@@ -49,3 +49,28 @@ def generate_key():
         secrets.choice(u()) for _ in range(secrets.randbelow(123) + 6)
     )
 
+
+class CompressAlgo(str, Enum):
+    NONE = "none"
+
+
+class EncryptAlgo(str, Enum):
+    NONE = "none"
+
+
+
+def compress(data: bytes | str, algo: CompressAlgo) -> bytes:
+    return data
+
+
+def decompress(data: bytes, algo: CompressAlgo) -> bytes:
+    return data
+
+
+def encrypt(data: bytes | str, algo: EncryptAlgo, key: str) -> bytes:
+    return data
+
+
+def decrypt(data: bytes, algo: EncryptAlgo, key: str) -> bytes:
+    return data
+

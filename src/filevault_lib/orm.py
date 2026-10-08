@@ -26,10 +26,16 @@ from sqlalchemy.orm import (
 )
 from sqlalchemy.sql import (
     expression,
+    func,
 )
 
 from filevault_lib.sqla import Base
-from filevault_lib.utils import KeyringRef, generate_key
+from filevault_lib.utils import (
+    KeyringRef,
+    generate_key,
+    CompressAlgo,
+    EncryptAlgo,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -81,25 +87,15 @@ class FileAttrs:                       # pylint: disable=too-few-public-methods
         nullable=False,
         server_default=text("0")
     )
-    encrypt: Mapped[bool] = mapped_column(
-        Boolean,
+    encrypt_algo: Mapped[EncryptAlgo] = mapped_column(
+        Enum(EncryptAlgo),
         nullable=False,
-        server_default=expression.false()
+        server_default=EncryptAlgo.NONE.value
     )
-    encrypt_algo: Mapped[str] = mapped_column(
-        String(128),
+    compress_algo: Mapped[CompressAlgo] = mapped_column(
+        Enum(CompressAlgo),
         nullable=False,
-        server_default=""
-    )
-    compress: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        server_default=expression.false()
-    )
-    compress_algo: Mapped[str] = mapped_column(
-        String(128),
-        nullable=False,
-        server_default=""
+        server_default=CompressAlgo.NONE.value
     )
     user_meta: Mapped[dict] = mapped_column(
         JSON,
@@ -109,7 +105,7 @@ class FileAttrs:                       # pylint: disable=too-few-public-methods
     permission: Mapped[str] = mapped_column(
         String(4),
         nullable=False,
-        server_default=text("'660'")
+        server_default=text("'640'")
     )
     ownership: Mapped[str] = mapped_column(
         String(100),
@@ -117,12 +113,14 @@ class FileAttrs:                       # pylint: disable=too-few-public-methods
         server_default=":"
     )
     created_on: Mapped[datetime] = mapped_column(
-        DateTime,
-        nullable=False
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now()
     )
     modified_on: Mapped[datetime] = mapped_column(
-        DateTime,
-        nullable=False
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now()
     )
 
 
