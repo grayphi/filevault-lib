@@ -280,7 +280,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
     def put(
         self,
         data: bytes | str,
-        user_meta: dict = {},
+        user_meta: dict = None,
         encrypt_algo: EncryptAlgo = EncryptAlgo.NONE,
         encrypt_key: str = None,
         compress_algo: CompressAlgo = CompressAlgo.NONE
@@ -288,22 +288,23 @@ class Vault:                          # pylint: disable=too-many-public-methods
         if isinstance(data, str):
             data = data.encode("utf-8")
 
-        return add_object(
-            compress(
-                encrypt(data, encrypt_algo, encrypt_key),
-                compress_algo
-            ),
-            user_meta,
-            encrypt_algo,
-            compress_algo
-        )
+        with get_session_from(self._session_local) as session:
+            return add_object(
+                session=session,
+                data=compress(
+                    encrypt(data, encrypt_algo, encrypt_key),
+                    compress_algo
+                ),
+                user_meta=user_meta,
+                encrypt_algo=encrypt_algo,
+                compress_algo=compress_algo
+            )
 
 
     def get(
         self,
         key: str,
-        decrypt: bool = True,
-        decompress: bool = True
+        encrypt_key: str = None
     ) -> (bytes, dict):
         pass
 
@@ -312,21 +313,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
         self,
         key: str
     ) -> bool:
-        pass
-
-    def put1_d(self, file, meta: dict = None, compress=None, encrypt=None) -> str:
-        pass
-
-
-    def get_d(self, key: str):
-        pass
-
-
-    def put_s(self, stream, meta: dict = None) -> str:
-        pass
-
-
-    def get_s(self, key: str):
         pass
 
 

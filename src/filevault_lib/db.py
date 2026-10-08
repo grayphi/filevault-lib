@@ -23,7 +23,6 @@ from filevault_lib.orm import (
 )
 from filevault_lib.utils import (
     KeyringRef,
-    generate_key,
     CompressAlgo,
     EncryptAlgo,
 )
@@ -138,8 +137,8 @@ def add_object(
     session: Session,
     data: bytes,
     user_meta: dict,
-    encrypt_algo: str,
-    compress_algo: str
+    encrypt_algo: EncryptAlgo,
+    compress_algo: CompressAlgo
 ) -> str:
     while True:
         k = KeyringTable(fwd_ref=KeyringRef.OBJECT)
@@ -149,7 +148,7 @@ def add_object(
                 session.add(k)
                 session.flush()
             break
-        except IntegrityError as e:
+        except IntegrityError:
             logger.debug("key collide, trying new")
             continue
 
