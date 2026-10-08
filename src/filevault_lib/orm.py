@@ -5,6 +5,7 @@
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import (
     String,
@@ -17,6 +18,7 @@ from sqlalchemy import (
     Enum,
     Boolean,
     LargeBinary,
+    DateTime,
 )
 from sqlalchemy.orm import (
     Mapped,
@@ -103,6 +105,24 @@ class FileAttrs:                       # pylint: disable=too-few-public-methods
         JSON,
         nullable=False,
         server_default="{}"
+    )
+    permission: Mapped[str] = mapped_column(
+        String(4),
+        nullable=False,
+        server_default=text("'660'")
+    )
+    ownership: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        server_default=":"
+    )
+    created_on: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False
+    )
+    modified_on: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False
     )
 
 
