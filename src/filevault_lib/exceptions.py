@@ -47,3 +47,8 @@ class NonEmptyVaultError(Exception):
 class DBException(Exception):
     pass
 
+
+class InputInconsitentException(Exception):
+    pass
+
+

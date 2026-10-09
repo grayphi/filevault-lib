@@ -258,3 +258,37 @@ def del_object(
         ) from e
 
 
+@transactional
+def get_objects(
+    session: Session,
+    keys: list[str]
+) -> list[(str, bytes, dict)]:
+    stmt = select(
+        ObjectsTable
+    ).where(
+        ObjectsTable.key.in_(keys)
+    )
+
+    try:
+        objs = session.execute(stmt).scalars().all()
+    except Exception as e:
+        logger.exception(e)
+        raise DBException(
+            "Something unexpected happened, while fetching Object(s)."
+        ) from e
+
+    return [(
+        obj.key,
+        obj.data,
+        {
+            "file_size": obj.file_size,
+            "disk_size": obj.disk_size,
+            "user_meta": obj.user_meta,
+            "encrypt_algo": obj.encrypt_algo,
+            "compress_algo": obj.compress_algo,
+            "created_on": obj.created_on,
+            "modified_on": obj.modified_on
+        }
+    ) for obj in objs]
+
+

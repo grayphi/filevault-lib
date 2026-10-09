@@ -29,6 +29,7 @@ from filevault_lib.exceptions import (
     VaultNotOpenError,
     VaultNotClosedError,
     NonEmptyVaultError,
+    InputInconsitentException,
 )
 from filevault_lib.sqla import (
     create_engine_on,
@@ -44,6 +45,8 @@ from filevault_lib.db import (
     add_object,
     get_object,
     del_object,
+    get_objects,
+    add_objects,
 )
 
 
@@ -354,6 +357,133 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
         with get_session_from(self._session_local) as session:
             del_object(session=session, key=key)
+
+
+    def mget(
+        self,
+        keys: list[str],
+        decrypt_keys: str | list[str] = None
+    ) -> list[(str, bytes, dict)]:
+        if not self.is_open:
+            # FIXME should return
+            raise VaultNotOpenError("Vault is not open.")
+
+        if decrypt_keys and isinstance(type(decrypt_keys), list):
+            if len(decrypt_keys) != len(keys):
+                logger.exception(
+                    "Number of encrypt keys must match total "
+                    "number of input keys."
+                )
+                raise InputInconsitentException(
+                    "Number of encrypt keys must match total "
+                    "number of input keys."
+                )
+        else:
+            decrypt_keys = [decrypt_keys] * len(keys)
+
+        with get_session_from(self._session_local) as session:
+            objs = get_objects(
+                session=session,
+                keys=keys
+            )
+            objs = [(*o, k) for o, k in zip(objs, decrypt_keys)]
+            objs = [(key,
+                decompress(
+                    data=decrypt(
+                        data=data,
+                        algo=meta.pop("encrypt_algo"),
+                        key=decrypt_key
+                    ),
+                    algo=meta.pop("compress_algo")
+                ), meta) for key, data, meta, decrypt_key in objs
+            ]
+            return objs
+
+
+    def mput(
+        self,
+        datas: list[bytes | str],
+        user_metas: dict | list[dict] = None,
+        encrypt_algos: EncryptAlgo | list[EncryptAlgo] = None,
+        encrypt_keys: str | list[str] = None,
+        compress_algos: CompressAlgo | list[CompressAlgo] = None
+    ) -> list[str]:
+        datas = [
+            d.encode("utf-8") if isinstance(d, str) else d
+            for d in datas
+        ]
+        l = len(datas)
+
+        if user_metas and isinstance(type(user_metas), list):
+            if l == len(user_metas):
+                logger.exception(
+                    "user_metas should be of same length as of data."
+                )
+                raise InputInconsitentException(
+                    "user_metas should be of same length as of data."
+                )
+        else:
+            user_metas = [user_metas] * l
+
+        if encrypt_algos and isinstance(type(encrypt_algos), list):
+            if l == len(encrypt_algos):
+                logger.exception(
+                    "encrypt_algos should be of same length as of data."
+                )
+                raise InputInconsitentException(
+                    "encrypt_algos should be of same length as of data."
+                )
+        else:
+            encrypt_algos = [encrypt_algos] * l
+
+        if encrypt_keys and isinstance(type(encrypt_keys), list):
+            if l == len(encrypt_keys):
+                logger.exception(
+                    "encrypt_keys should be of same length as of data."
+                )
+                raise InputInconsitentException(
+                    "encrypt_keys should be of same length as of data."
+                )
+        else:
+            encrypt_keys = [encrypt_keys] * l
+
+        if compress_algos and isinstance(type(compress_algos), list):
+            if l == len(compress_algos):
+                logger.exception(
+                    "compress_algos should be of same length as of data."
+                )
+                raise InputInconsitentException(
+                    "compress_algos should be of same length as of data."
+                )
+        else:
+            compress_algos = [compress_algos] * l
+
+        datas = [
+            (compress(
+                data=encrypt(
+                    data=d,
+                    algo=ea,
+                    key=ek
+                ),
+                algo=ca
+            ), len(d)) for d, ea, ek, ca in zip(
+                datas,
+                encrypt_algos,
+                encrypt_keys,
+                compress_algos
+            )
+        ]
+
+        datas, sizes = map(list, zip(*datas))
+        with get_session_from(self._session_local) as session:
+            return add_objects(
+                session=session,
+                data=datas,
+                size=sizes,
+                user_meta=user_metas,
+                encrypt_algo=encrypt_algos,
+                compress_algo=compress_algos
+            )
 
 
     def query(self):
