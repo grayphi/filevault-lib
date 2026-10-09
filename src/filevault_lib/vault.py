@@ -40,8 +40,12 @@ from filevault_lib import orm                   # pylint: disable=unused-import
 from filevault_lib.db import (
     get_status,
     set_status,
+    get_stats,
     add_object,
+    get_object,
+    del_object,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -277,6 +281,15 @@ class Vault:                          # pylint: disable=too-many-public-methods
         del self._session_local
 
 
+    def stats(self) -> dict:
+        if not self.is_open:
+            # FIXME should return
+            raise VaultNotOpenError("Vault is not open.")
+
+        with get_session_from(self._session_local) as session:
+            return get_stats(session)
+
+
     def put(
         self,
         data: bytes | str,
@@ -292,9 +305,14 @@ class Vault:                          # pylint: disable=too-many-public-methods
             return add_object(
                 session=session,
                 data=compress(
-                    encrypt(data, encrypt_algo, encrypt_key),
-                    compress_algo
+                    data=encrypt(
+                        data=data,
+                        algo=encrypt_algo,
+                        key=encrypt_key
+                    ),
+                    algo=compress_algo
                 ),
+                size=len(data),
                 user_meta=user_meta,
                 encrypt_algo=encrypt_algo,
                 compress_algo=compress_algo
@@ -304,16 +322,38 @@ class Vault:                          # pylint: disable=too-many-public-methods
     def get(
         self,
         key: str,
-        encrypt_key: str = None
+        decrypt_key: str = None
     ) -> (bytes, dict):
-        pass
+        if not self.is_open:
+            # FIXME should return
+            raise VaultNotOpenError("Vault is not open.")
+
+        with get_session_from(self._session_local) as session:
+            data, meta = get_object(
+                session=session,
+                key=key
+            )
+            data = decompress(
+                data=decrypt(
+                    data=data,
+                    algo=meta.pop("encrypt_algo"),
+                    key=decrypt_key
+                ),
+                algo=meta.pop("compress_algo")
+            )
+            return (data, meta)
 
 
     def rm(
         self,
         key: str
-    ) -> bool:
-        pass
+    ):
+        if not self.is_open:
+            # FIXME should return
+            raise VaultNotOpenError("Vault is not open.")
+
+        with get_session_from(self._session_local) as session:
+            del_object(session=session, key=key)
 
 
     def query(self):

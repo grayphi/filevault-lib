@@ -11,6 +11,9 @@ from sqlalchemy import (
     delete,
 )
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.sql import (
+    func,
+)
 
 from filevault_lib.sqla import Session, transactional
 from filevault_lib.orm import (
@@ -133,9 +136,30 @@ def set_status(session: Session, status: str) -> bool:
 
 
 @transactional
+def get_stats(session: Session) -> dict:
+    stmt = select(
+        KeyringTable.fwd_ref,
+        func.count().label("total")              # pylint: disable=not-callable
+    ).group_by(
+        KeyringTable.fwd_ref
+    )
+
+    try:
+        count_stats = session.execute(stmt).all()
+        return dict(count_stats)
+    except Exception as e:
+        logger.exception(e)
+        raise DBException(
+            "Something unexpected happened, while fetching stats."
+        ) from e
+
+
+            # pylint: disable=too-many-arguments, too-many-positional-arguments
+@transactional
 def add_object(
     session: Session,
     data: bytes,
+    size: int,
     user_meta: dict,
     encrypt_algo: EncryptAlgo,
     compress_algo: CompressAlgo
@@ -152,10 +176,11 @@ def add_object(
             logger.debug("key collide, trying new")
             continue
 
-    o = ObjectsTable(
+    o = ObjectsTable(                  # pylint: disable=unexpected-keyword-arg
         key=k.key,
         data=data,
-        size=len(data),
+        file_size=size,
+        disk_size=len(data),
         encrypt_algo=encrypt_algo,
         compress_algo=compress_algo,
         user_meta=user_meta
@@ -165,4 +190,71 @@ def add_object(
     session.flush()
 
     return k.key
+
+
+@transactional
+def get_object(
+    session: Session,
+    key: str
+) -> (bytes, dict):
+    stmt = select(
+        ObjectsTable
+    ).where(
+        ObjectsTable.key == key
+    )
+
+    try:
+        obj = session.execute(stmt).scalar_one_or_none()
+    except Exception as e:
+        logger.exception(e)
+        raise DBException(
+            "Something unexpected happened, while fetching Object."
+        ) from e
+
+    return (
+        obj.data,
+        {
+            "file_size": obj.file_size,
+            "disk_size": obj.disk_size,
+            "user_meta": obj.user_meta,
+            "encrypt_algo": obj.encrypt_algo,
+            "compress_algo": obj.compress_algo,
+            "created_on": obj.created_on,
+            "modified_on": obj.modified_on
+        }
+    )
+
+
+@transactional
+def del_object(
+    session: Session,
+    key: str
+):
+    stmt_1 = delete(
+        ObjectsTable
+    ).where(
+        ObjectsTable.key == key
+    )
+
+    stmt_2 = delete(
+        KeyringTable
+    ).where(
+        KeyringTable.key == key
+    )
+
+    try:
+        session.execute(stmt_1)
+        session.execute(stmt_2)
+        session.flush()
+    except IntegrityError as e:
+        logger.exception(e)
+        raise DBException(
+            "Can't delete data, integrity check failed."
+        ) from e
+    except Exception as e:
+        logger.exception(e)
+        raise DBException(
+            "Something unexpected happened, while deleting data."
+        ) from e
+
 

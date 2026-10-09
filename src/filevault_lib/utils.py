@@ -35,7 +35,7 @@ class KeyringRef(str, Enum):
     OBJECT = "O"
     FILES = "F"
     SHARDS = "S"
-
+    CACHE = "C"
 
 
 def generate_key():

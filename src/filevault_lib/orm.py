@@ -80,7 +80,12 @@ class FileAttrs:                       # pylint: disable=too-few-public-methods
         nullable=False,
         server_default=""
     )
-    size: Mapped[int] = mapped_column(
+    file_size: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0")
+    )
+    disk_size: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         server_default=text("0")
