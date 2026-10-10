@@ -399,14 +399,16 @@ class Vault:                          # pylint: disable=too-many-public-methods
             ]
             return objs
 
-
+                                           # pylint: disable=too-many-arguments
+                                # pylint: disable=too-many-positional-arguments
     def mput(
         self,
         datas: list[bytes | str],
         user_metas: dict | list[dict] = None,
         encrypt_algos: EncryptAlgo | list[EncryptAlgo] = None,
         encrypt_keys: str | list[str] = None,
-        compress_algos: CompressAlgo | list[CompressAlgo] = None
+        compress_algos: CompressAlgo | list[CompressAlgo] = None,
+        chunk_size: int = 512
     ) -> list[str]:
         datas = [
             d.encode("utf-8") if isinstance(d, str) else d
@@ -434,7 +436,10 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     "encrypt_algos should be of same length as of data."
                 )
         else:
-            encrypt_algos = [encrypt_algos] * l
+            encrypt_algos = [
+                encrypt_algos if isinstance(type(encrypt_algos), EncryptAlgo)
+                else EncryptAlgo(str(encrypt_algos).lower())
+            ] * l
 
         if encrypt_keys and isinstance(type(encrypt_keys), list):
             if l == len(encrypt_keys):
@@ -456,7 +461,11 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     "compress_algos should be of same length as of data."
                 )
         else:
-            compress_algos = [compress_algos] * l
+            compress_algos = [
+                compress_algos if isinstance(
+                    type(compress_algos), CompressAlgo
+                ) else CompressAlgo(str(compress_algos).lower())
+            ] * l
 
         datas = [
             (compress(
@@ -478,11 +487,12 @@ class Vault:                          # pylint: disable=too-many-public-methods
         with get_session_from(self._session_local) as session:
             return add_objects(
                 session=session,
-                data=datas,
-                size=sizes,
-                user_meta=user_metas,
-                encrypt_algo=encrypt_algos,
-                compress_algo=compress_algos
+                datas=datas,
+                sizes=sizes,
+                user_metas=user_metas,
+                encrypt_algos=encrypt_algos,
+                compress_algos=compress_algos,
+                chunk_size=chunk_size
             )
 
 
