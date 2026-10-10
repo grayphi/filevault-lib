@@ -59,18 +59,22 @@ class EncryptAlgo(str, Enum):
 
 
 
+                                              # pylint: disable=unused-argument
 def compress(data: bytes | str, algo: CompressAlgo) -> bytes:
     return data
 
 
+                                              # pylint: disable=unused-argument
 def decompress(data: bytes, algo: CompressAlgo) -> bytes:
     return data
 
 
+                                              # pylint: disable=unused-argument
 def encrypt(data: bytes | str, algo: EncryptAlgo, key: str) -> bytes:
     return data
 
 
+                                              # pylint: disable=unused-argument
 def decrypt(data: bytes, algo: EncryptAlgo, key: str) -> bytes:
     return data
 
