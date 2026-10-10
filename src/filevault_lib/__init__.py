@@ -11,4 +11,4 @@ from filevault_lib.vault import Vault
 logger = logging.getLogger(__name__)
 
 
-__VERSION__ = "0.1.0"
+__VERSION__ = "0.2.0"
