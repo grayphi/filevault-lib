@@ -1,0 +1,30 @@
+[project]
+name = "filevault-lib"
+version = "0.2.0"
+description = "A local, serverless key-value object store for efficiently storing files and binary objects on disk, with automatic storage management and no running server required."
+readme = "README.md"
+authors = [
+    { name = "grayphi", email = "" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "click>=8.5.0",
+    "sqlalchemy>=2.1.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/grayphi/filevault-lib"
+Source = "https://github.com/grayphi/filevault-lib"
+"Bug Tracker" = "https://github.com/grayphi/filevault-lib/issues"
+
+[project.scripts]
+
+[build-system]
+requires = ["uv_build>=0.12.15,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pylint>=4.1.1",
+    "pytest>=9.1.1",
+]
