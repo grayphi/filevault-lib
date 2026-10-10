@@ -351,3 +351,37 @@ def add_objects(
         needed = needed - chunk_size
 
     return keys
+
+
+@transactional
+def del_objects(
+    session: Session,
+    keys: list[str]
+):
+    stmt_1 = delete(
+        ObjectsTable
+    ).where(
+        ObjectsTable.key.in_(keys)
+    )
+
+    stmt_2 = delete(
+        KeyringTable
+    ).where(
+        KeyringTable.key.in_(keys)
+    )
+
+    try:
+        session.execute(stmt_1)
+        session.execute(stmt_2)
+        session.flush()
+    except IntegrityError as e:
+        logger.exception(e)
+        raise DBException(
+            "Can't delete data, integrity check failed."
+        ) from e
+    except Exception as e:
+        logger.exception(e)
+        raise DBException(
+            "Something unexpected happened, while deleting data."
+        ) from e
+

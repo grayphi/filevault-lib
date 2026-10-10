@@ -47,6 +47,7 @@ from filevault_lib.db import (
     del_object,
     get_objects,
     add_objects,
+    del_objects,
 )
 
 
@@ -495,6 +496,18 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 compress_algos=compress_algos,
                 chunk_size=chunk_size
             )
+
+
+    def mrm(
+        self,
+        keys: list[str]
+    ):
+        if not self.is_open:
+            # FIXME should return
+            raise VaultNotOpenError("Vault is not open.")
+
+        with get_session_from(self._session_local) as session:
+            del_objects(session=session, keys=keys)
 
 
     def query(self):
