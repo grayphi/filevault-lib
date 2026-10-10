@@ -185,6 +185,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
 
     def delete(self, force: bool = False) -> bool:
+        #TODO check for object data presence in sqlite db
         flag = False
 
         if not self.is_created:
