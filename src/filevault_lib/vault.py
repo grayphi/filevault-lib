@@ -190,7 +190,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
         flag = False
 
         if not self.is_created:
-            # FIXME should return
             raise VaultNotCreatedError("Vault is not created yet.")
 
         if self.is_open:
@@ -274,7 +273,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
     def close(self) -> None:
         if not self.is_open:
-            # FIXME should return
             raise VaultNotOpenError("Vault is not open.")
 
         with get_session_from(self._session_local) as session:
@@ -288,7 +286,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
     def stats(self) -> dict:
         if not self.is_open:
-            # FIXME should return
             raise VaultNotOpenError("Vault is not open.")
 
         with get_session_from(self._session_local) as session:
@@ -303,6 +300,9 @@ class Vault:                          # pylint: disable=too-many-public-methods
         encrypt_key: str = None,
         compress_algo: CompressAlgo = CompressAlgo.NONE
     ) -> str:
+        if not self.is_open:
+            raise VaultNotOpenError("Vault is not open.")
+
         if isinstance(data, str):
             data = data.encode("utf-8")
 
@@ -330,7 +330,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
         decrypt_key: str = None
     ) -> (bytes, dict):
         if not self.is_open:
-            # FIXME should return
             raise VaultNotOpenError("Vault is not open.")
 
         with get_session_from(self._session_local) as session:
@@ -354,20 +353,21 @@ class Vault:                          # pylint: disable=too-many-public-methods
         key: str
     ):
         if not self.is_open:
-            # FIXME should return
             raise VaultNotOpenError("Vault is not open.")
 
         with get_session_from(self._session_local) as session:
             del_object(session=session, key=key)
 
 
+    # sqlite limit 32766 as max parameters to add in single query, so keys
+    #  list should be less than that, create chunks of keys list and fetch
+    #  in chunk, if more than that.
     def mget(
         self,
         keys: list[str],
         decrypt_keys: str | list[str] = None
     ) -> list[(str, bytes, dict)]:
         if not self.is_open:
-            # FIXME should return
             raise VaultNotOpenError("Vault is not open.")
 
         if decrypt_keys and isinstance(type(decrypt_keys), list):
@@ -403,6 +403,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
                                            # pylint: disable=too-many-arguments
                                 # pylint: disable=too-many-positional-arguments
+                                            # pylint: disable=too-many-branches
     def mput(
         self,
         datas: list[bytes | str],
@@ -412,6 +413,9 @@ class Vault:                          # pylint: disable=too-many-public-methods
         compress_algos: CompressAlgo | list[CompressAlgo] = None,
         chunk_size: int = 512
     ) -> list[str]:
+        if not self.is_open:
+            raise VaultNotOpenError("Vault is not open.")
+
         datas = [
             d.encode("utf-8") if isinstance(d, str) else d
             for d in datas
@@ -503,7 +507,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
         keys: list[str]
     ):
         if not self.is_open:
-            # FIXME should return
             raise VaultNotOpenError("Vault is not open.")
 
         with get_session_from(self._session_local) as session:
