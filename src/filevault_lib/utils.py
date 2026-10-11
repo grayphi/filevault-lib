@@ -78,3 +78,45 @@ def encrypt(data: bytes | str, algo: EncryptAlgo, key: str) -> bytes:
 def decrypt(data: bytes, algo: EncryptAlgo, key: str) -> bytes:
     return data
 
+
+def _create_relative_loc(
+    parent: Path,
+    name: str,
+    size: int,
+    create=True
+) -> Path:
+    dat = {"filename": name, "size": size}
+    _u = str(uuid.uuid5(Constants.NAMESPACE, str(dat))).replace("-", "")
+    _u = [_u[i:i+2] for i in range(0, len(_u), 2)]
+    _u = _u[0:-6] + ["".join(_u[-6:])]
+    p = Path(parent)
+
+    for i in _u:
+        p = p / i
+
+    if create:
+        p.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        return p
+
+    _f = [
+        i.name.partition("-")[2]
+        for i in Path(p.parent).iterdir() if i.name.startswith(p.name)
+    ]
+
+    try:
+        _f.remove("")
+    except ValueError:
+        pass
+
+    try:
+        nxt = max([int(i, 16) for i in _f]) + 1
+    except ValueError:
+        nxt = 0
+
+    nxt = f"{nxt:02x}"
+    nxt = nxt.zfill(len(nxt) + len(nxt) % 2)
+
+    return Path(p.parent / f"{p.name}-{nxt}")
+
+
