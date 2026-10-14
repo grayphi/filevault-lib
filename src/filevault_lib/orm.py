@@ -4,7 +4,6 @@
 
 
 import logging
-from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import (
@@ -41,8 +40,7 @@ logger = logging.getLogger(__name__)
 _TABLE_PREFIX_ = "__FILEVAULT_LIB_"
 
 
-@dataclass
-class RuntimeContextTable(Base):
+class RuntimeContextTable(Base):       # pylint: disable=too-few-public-methods
     __tablename__ = f"{_TABLE_PREFIX_}_RUNTIME_CONTEXT"
 
     key: Mapped[str] = mapped_column(
@@ -57,8 +55,7 @@ class RuntimeContextTable(Base):
     )
 
 
-@dataclass
-class KeyringTable(Base):
+class KeyringTable(Base):              # pylint: disable=too-few-public-methods
     __tablename__ = f"{_TABLE_PREFIX_}_KEYRING"
 
     key: Mapped[str] = mapped_column(
@@ -105,10 +102,10 @@ class FileAttrs:                       # pylint: disable=too-few-public-methods
         nullable=False,
         server_default="{}"
     )
-    permission: Mapped[str] = mapped_column(
-        String(4),
+    permission: Mapped[int] = mapped_column(
+        Integer,
         nullable=False,
-        server_default=text("'640'")
+        server_default=text("33184")         # octal: 0o100640, str: -rw-r-----
     )
     ownership: Mapped[str] = mapped_column(
         String(100),
@@ -125,10 +122,14 @@ class FileAttrs:                       # pylint: disable=too-few-public-methods
         nullable=False,
         server_default=func.now()                # pylint: disable=not-callable
     )
+    last_accessed_on: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now()                # pylint: disable=not-callable
+    )
 
 
-@dataclass
-class ObjectsTable(Base, FileAttrs):
+class ObjectsTable(Base, FileAttrs):   # pylint: disable=too-few-public-methods
     __tablename__ = f"{_TABLE_PREFIX_}_OBJECTS"
 
     key: Mapped[str] = mapped_column(
@@ -143,8 +144,7 @@ class ObjectsTable(Base, FileAttrs):
     )
 
 
-@dataclass
-class FilesTable(Base, FileAttrs):
+class FilesTable(Base, FileAttrs):     # pylint: disable=too-few-public-methods
     __tablename__ = f"{_TABLE_PREFIX_}_FILES"
 
     key: Mapped[str] = mapped_column(
@@ -167,8 +167,7 @@ class FilesTable(Base, FileAttrs):
     )
 
 
-@dataclass
-class ShardsTable(Base, FileAttrs):
+class ShardsTable(Base, FileAttrs):    # pylint: disable=too-few-public-methods
     __tablename__ = f"{_TABLE_PREFIX_}_SHARDS"
 
     key: Mapped[str] = mapped_column(
@@ -200,8 +199,7 @@ class ShardsTable(Base, FileAttrs):
     )
 
 
-@dataclass
-class CacheTable(Base, FileAttrs):
+class CacheTable(Base, FileAttrs):     # pylint: disable=too-few-public-methods
     __tablename__ = f"{_TABLE_PREFIX_}_CACHE"
 
     id: Mapped[int] = mapped_column(

@@ -60,7 +60,7 @@ class EncryptAlgo(str, Enum):
 
 
                                               # pylint: disable=unused-argument
-def compress(data: bytes | str, algo: CompressAlgo) -> bytes:
+def compress(data: bytes | str | Path, algo: CompressAlgo) -> bytes:
     return data
 
 
@@ -70,7 +70,7 @@ def decompress(data: bytes, algo: CompressAlgo) -> bytes:
 
 
                                               # pylint: disable=unused-argument
-def encrypt(data: bytes | str, algo: EncryptAlgo, key: str) -> bytes:
+def encrypt(data: bytes | str | Path, algo: EncryptAlgo, key: str) -> bytes:
     return data
 
 
@@ -79,7 +79,7 @@ def decrypt(data: bytes, algo: EncryptAlgo, key: str) -> bytes:
     return data
 
 
-def _create_relative_loc(
+def prepare_file_on(
     parent: Path,
     name: str,
     size: int,
@@ -110,7 +110,7 @@ def _create_relative_loc(
         pass
 
     try:
-        nxt = max([int(i, 16) for i in _f]) + 1
+        nxt = max(int(i, 16) for i in _f) + 1
     except ValueError:
         nxt = 0
 
@@ -118,5 +118,14 @@ def _create_relative_loc(
     nxt = nxt.zfill(len(nxt) + len(nxt) % 2)
 
     return Path(p.parent / f"{p.name}-{nxt}")
+
+
+def save_file_as(
+    file: Path,
+    encrypt_algo: EncryptAlgo,
+    encrypt_key: str,
+    compress_algo: CompressAlgo
+) -> Path:
+    pass
 
 

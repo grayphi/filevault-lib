@@ -3,8 +3,14 @@
 # pylint: disable=missing-class-docstring, trailing-newlines
 
 
+from __future__ import annotations
+
 import logging
 from math import ceil
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING
+
 
 from sqlalchemy import (
     select,
@@ -16,6 +22,8 @@ from sqlalchemy.sql import (
     func,
 )
 
+if TYPE_CHECKING:
+    from filevault_lib.vault import Vault
 from filevault_lib.sqla import Session, transactional
 from filevault_lib.orm import (
     RuntimeContextTable,
@@ -177,7 +185,7 @@ def add_object(
             logger.debug("key collide, trying new")
             continue
 
-    o = ObjectsTable(                  # pylint: disable=unexpected-keyword-arg
+    o = ObjectsTable(
         key=k.key,
         data=data,
         file_size=size,
@@ -334,7 +342,7 @@ def add_objects(
             encrypt_algo = encrypt_algos.pop(0)
             compress_algo = compress_algos.pop(0)
 
-            objs += [ObjectsTable(     # pylint: disable=unexpected-keyword-arg
+            objs += [ObjectsTable(
                 key=k.key,
                 data=data,
                 file_size=size,
@@ -384,4 +392,54 @@ def del_objects(
         raise DBException(
             "Something unexpected happened, while deleting data."
         ) from e
+
+
+@transactional
+def add_file(
+    session: Session,
+    file: Path,
+    name: str,
+    file_size: int,
+    disk_size: int,
+    user_meta: dict,
+    encrypt_algo: EncryptAlgo,
+    compress_algo: CompressAlgo,
+    permission: str,
+    ownership: str,
+    created_on: datetime,
+    modified_on: datetime,
+    last_accessed_on: datetime
+) -> str:
+    while True:
+        k = KeyringTable(fwd_ref=KeyringRef.FILES)
+
+        try:
+            with session.begin_nested():
+                session.add(k)
+                session.flush()
+            break
+        except IntegrityError:
+            logger.debug("key collide, trying new")
+            continue
+
+    o = FilesTable(
+        key=k.key,
+        loc=file.as_posix(),
+        name=name,
+        file_size=file_size,
+        disk_size=disk_size,
+        encrypt_algo=encrypt_algo,
+        compress_algo=compress_algo,
+        user_meta=user_meta,
+        permission=permission,
+        ownership=ownership,
+        created_on=created_on,
+        modified_on=modified_on,
+        last_accessed_on=last_accessed_on
+    )
+
+    session.add(o)
+    session.flush()
+
+    return k.key
 

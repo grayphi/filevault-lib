@@ -3,6 +3,7 @@
 # pylint: disable=missing-class-docstring, trailing-newlines
 
 
+import os
 import logging
 import shutil
 from pathlib import Path
@@ -20,6 +21,7 @@ from filevault_lib.utils import (
     decompress,
     encrypt,
     decrypt,
+    save_file_as,
 )
 from filevault_lib.exceptions import (
     InvalidVaultKey,
@@ -48,6 +50,7 @@ from filevault_lib.db import (
     get_objects,
     add_objects,
     del_objects,
+    add_file,
 )
 
 
@@ -511,6 +514,70 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
         with get_session_from(self._session_local) as session:
             del_objects(session=session, keys=keys)
+
+
+    def putf(
+        self,
+        file: Path,
+        user_meta: dict = None,
+        encrypt_algo: EncryptAlgo = EncryptAlgo.NONE,
+        encrypt_key: str = None,
+        compress_algo: CompressAlgo = CompressAlgo.NONE
+    ) -> str:
+        if not self.is_open:
+            raise VaultNotOpenError("Vault is not open.")
+
+        file = Path(file)
+
+        if not (file.exists() or file.is_file()):
+            raise FileNotFoundError(f"File not found: {file}")
+
+        if not os.access(file, os.R_OK):
+            raise PermissionError(f"File not readable: {file}")
+
+        info = file.stat()
+
+        meta = {
+            "file_size": info.st_size,
+            "permission": info.st_mode,
+            "ownership": f"{info.st_uid}:{info.st_gid}",
+            "created_on": info.st_ctime,
+            "modified_on": info.st_mtime,
+            "last_accessed_on": info.st_atime,
+        }
+
+        file = save_file_as(
+            file,
+            encrypt_algo=encrypt_algo,
+            encrypt_key=encrypt_key,
+            compress_algo=compress_algo
+        )
+
+        key = None
+        try:
+            with get_session_from(self._session_local) as session:
+                key = add_file(
+                    session=session,
+                    file=file.relative_to(self.get_root()),
+                    disk_size=file.stat().st_size,
+                    user_meta=user_meta,
+                    encrypt_algo=encrypt_algo,
+                    compress_algo=compress_algo,
+                    **meta
+                )
+        except Exception as e:
+            logger.exception(e)
+            logger.error("Can't save file, something unexpected happen.")
+
+            try:
+                if file.relative_to(self.get_root()):
+                    file.unlink(missing_ok=True)
+            except ValueError:
+                pass
+
+            raise e
+
+        return key
 
 
     def query(self):
