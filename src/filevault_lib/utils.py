@@ -4,13 +4,14 @@
 
 
 import logging
-import uuid
+from uuid import UUID, uuid5
 from pathlib import Path
 from enum import Enum
 import secrets
 import string
 import random
 from functools import lru_cache
+import shutil
 
 from filevault_lib.config import Constants
 
@@ -18,12 +19,17 @@ from filevault_lib.config import Constants
 logger = logging.getLogger(__name__)
 
 
-def get_vault_uuid(key: str, container: Path) -> str:
+def get_vault_uuid(
+    key: str,
+    container: Path,
+    namespace: str | UUID = None
+) -> str:
     return str(
-        uuid.uuid5(Constants.NAMESPACE, Path(container / key).as_posix())
-        if (key and container)
-        else None
-    )
+        uuid5(
+            UUID(str(namespace)) if namespace else Constants.NAMESPACE,
+            Path(container / key).as_posix()
+        )
+    ) if key and container else None
 
 
 def path2url(p: Path | str) -> str:
@@ -79,24 +85,32 @@ def decrypt(data: bytes, algo: EncryptAlgo, key: str) -> bytes:
     return data
 
 
-def prepare_file_on(
-    parent: Path,
-    name: str,
-    size: int,
-    create=True
+def _transform_plain_file(
+    file: Path,
+    vault_uuid: str | UUID,
+    root: Path = None,
+    create: bool = True
 ) -> Path:
-    dat = {"filename": name, "size": size}
-    _u = str(uuid.uuid5(Constants.NAMESPACE, str(dat))).replace("-", "")
+    _u = str(
+        uuid5(
+            UUID(str(vault_uuid)), str(
+                {"filename": file.name, "size": file.stat().st_size}
+            )
+        )
+    ).replace("-", "")
     _u = [_u[i:i+2] for i in range(0, len(_u), 2)]
     _u = _u[0:-6] + ["".join(_u[-6:])]
-    p = Path(parent)
 
+    p = Path()
     for i in _u:
         p = p / i
 
-    if create:
+    p = Path(root) / p if root else p
+
+    if root and create:
         p.parent.mkdir(parents=True, exist_ok=True)
-    else:
+
+    if not p.parent.exists():
         return p
 
     _f = [
@@ -122,10 +136,24 @@ def prepare_file_on(
 
 def save_file_as(
     file: Path,
+    shard_size_limit: int,
+    shard_filesize_limit: int,
     encrypt_algo: EncryptAlgo,
     encrypt_key: str,
-    compress_algo: CompressAlgo
+    compress_algo: CompressAlgo,
+    vault_uuid: str | UUID,
+    files_root: Path,
+    shards_root: Path
 ) -> Path:
-    pass
+    #if file.stat().st_size > shard_filesize_limit:
+    if file.stat().st_size > 0:
+        fout = _transform_plain_file(
+            file,
+            vault_uuid=vault_uuid,
+            root=files_root
+        )
 
+        shutil.copyfile(file, fout)
+
+    return fout
 

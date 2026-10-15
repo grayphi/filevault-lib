@@ -231,7 +231,7 @@ def get_object(
             "created_on": obj.created_on,
             "modified_on": obj.modified_on
         }
-    )
+    ) if obj else (None, None)
 
 
 @transactional

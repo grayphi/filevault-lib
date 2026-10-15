@@ -7,9 +7,12 @@ import os
 import logging
 import shutil
 from pathlib import Path
+from uuid import UUID
+from datetime import datetime
 
 from filevault_lib.config import (
     ConfigManager,
+    get_constants,
     load_config_for,
     save_config_to,
 )
@@ -59,7 +62,12 @@ logger = logging.getLogger(__name__)
 
 class Vault:                          # pylint: disable=too-many-public-methods
                                 #  pylint: disable=too-many-instance-attributes
-    def __init__(self, key: str, container: str | Path = None) -> None:
+    def __init__(
+        self,
+        key: str,
+        container: str | Path = None,
+        namespace: str | UUID = None
+    ) -> None:
         if not key:
             raise InvalidVaultKey("Vault key cannot be null.")
 
@@ -67,12 +75,19 @@ class Vault:                          # pylint: disable=too-many-public-methods
         self._uuid = None
         self._container = None
         self._root = None
-        self._config = None
+        self._config = ConfigManager()
+        self._config.set("KEY", self._key)
+
+        if namespace:
+            namespace = UUID(str(namespace))
+            self._config.set("NAMESPACE", namespace)
 
         if container:
             self._container = Path(container).resolve()
-            self._uuid = get_vault_uuid(key, container)
+            self._uuid = get_vault_uuid(key, container, namespace)
             self._root = self._container / self._uuid
+            self._config.set("UUID", self._uuid)
+            self._config.set("CONTAINER", self._container)
 
 
     def get_container(self) -> Path:
@@ -116,34 +131,47 @@ class Vault:                          # pylint: disable=too-many-public-methods
         conf_file: Path|str = None,
         conf: ConfigManager = None
     ) -> None:
-        if conf_file:
-            self._config = load_config_for(self.get_key(), conf_file)
+        exc_list = ["KEY"] 
 
-        self._config = self._config or ConfigManager()
+        if self.get_container():
+            exc_list += ["CONTAINER"]
+
+        if self.get_uuid():
+            exc_list += ["UUID"]
+
+        if self.get_config().get("NAMESPACE"):
+            exc_list += ["NAMESPACE"]
+
+        self._config.from_dict(
+            get_constants(),
+            exclude=exc_list
+        )
+
+        if conf_file:
+            self._config.copy_form(
+                load_config_for(self.get_key(), conf_file),
+                exclude=exc_list
+            )
+
         if conf:
             self._config.copy_form(
                 conf,
-                exclude=[
-                    "KEY",
-                    "CONTAINER",
-                    "UUID"
-                ]
+                exclude=exc_list
             )
 
-        self._config.set("KEY", self.get_key())
-
         try:
-            self._container = Path(
-                self._config.get("CONTAINER", self.get_container())
-            ).resolve()
+            self._container = Path(self._config.get("CONTAINER")).resolve()
+            self._config.set("CONTAINER", self.get_container())
         except TypeError as exc:
             raise InvalidVaultContainer("Vault key cannot be null.") from exc
 
-        self._uuid = get_vault_uuid(self.get_key(), self.get_container())
-        self._root = self.get_container() / self.get_uuid()
-
-        self._config.set("CONTAINER", self.get_container())
+        self._uuid = get_vault_uuid(
+            self.get_key(),
+            self.get_container(),
+            self.get_config().get("NAMESPACE")
+        )
         self._config.set("UUID", self.get_uuid())
+        self._root = self.get_container() / self.get_uuid()
 
 
     def save(self, to_file: Path|str) -> None:
@@ -347,7 +375,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     key=decrypt_key
                 ),
                 algo=meta.pop("compress_algo")
-            )
+            ) if data else None
             return (data, meta)
 
 
@@ -538,19 +566,27 @@ class Vault:                          # pylint: disable=too-many-public-methods
         info = file.stat()
 
         meta = {
+            "name": file.name,
             "file_size": info.st_size,
             "permission": info.st_mode,
             "ownership": f"{info.st_uid}:{info.st_gid}",
-            "created_on": info.st_ctime,
-            "modified_on": info.st_mtime,
-            "last_accessed_on": info.st_atime,
+            "created_on": datetime.fromtimestamp(info.st_ctime),
+            "modified_on": datetime.fromtimestamp(info.st_mtime),
+            "last_accessed_on": datetime.fromtimestamp(info.st_atime),
         }
 
         file = save_file_as(
             file,
+            shard_size_limit=self.get_config().get("MAX_SHARD_SIZE"),
+            shard_filesize_limit=self.get_config().get(
+                "MAX_FILE_SIZE_IN_SHARD"
+            ),
             encrypt_algo=encrypt_algo,
             encrypt_key=encrypt_key,
-            compress_algo=compress_algo
+            compress_algo=compress_algo,
+            vault_uuid=self.get_uuid(),
+            files_root=self.get_files_root(),
+            shards_root=self.get_shards_root()
         )
 
         key = None
