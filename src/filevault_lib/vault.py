@@ -11,6 +11,7 @@ from uuid import UUID
 from datetime import datetime
 
 from pydantic import SecretStr
+from cryptography.exceptions import InvalidTag
 
 from filevault_lib.config import (
     ConfigManager,
@@ -37,6 +38,7 @@ from filevault_lib.exceptions import (
     VaultNotClosedError,
     NonEmptyVaultError,
     InputInconsitentException,
+    VaultDecryptionError,
 )
 from filevault_lib.sqla import (
     create_engine_on,
@@ -387,6 +389,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 session=session,
                 key=key
             )
+        try:
             data=decrypt(
                 data = decompress(
                     data=data,
@@ -402,7 +405,11 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 argon_iterations=self.get_config().get("ARGON_ITERATIONS"),
                 argon_lanes=self.get_config().get("ARGON_LANES")
             ) if data else None
-            return (data, meta)
+        except InvalidTag as exc:
+            raise VaultDecryptionError(
+                "Decryption failed: incorrect password or corrupted data."
+            ) from exc
+        return (data, meta)
 
 
     def rm(
@@ -449,7 +456,8 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 session=session,
                 keys=keys
             )
-            objs = [(*o, k) for o, k in zip(objs, decrypt_keys)]
+        objs = [(*o, k) for o, k in zip(objs, decrypt_keys)]
+        try:
             objs = [(key,
                 decrypt(
                     data=decompress(
@@ -467,7 +475,12 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     argon_lanes=self.get_config().get("ARGON_LANES")
                 ), meta) for key, data, meta, decrypt_key in objs
             ]
-            return objs
+        except InvalidTag as exc:
+            raise VaultDecryptionError(
+                "Decryption failed for some objects: "
+                "incorrect password or corrupted data."
+            ) from exc
+        return objs
 
                                            # pylint: disable=too-many-arguments
                                 # pylint: disable=too-many-positional-arguments
