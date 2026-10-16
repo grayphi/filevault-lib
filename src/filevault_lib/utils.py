@@ -7,11 +7,14 @@ import logging
 from uuid import UUID, uuid5
 from pathlib import Path
 from enum import Enum
+from collections.abc import Iterator
 import secrets
 import string
 import random
 from functools import lru_cache
-import shutil
+import zlib
+import bz2
+import lzma
 
 from filevault_lib.config import Constants
 
@@ -58,29 +61,133 @@ def generate_key():
 
 class CompressAlgo(str, Enum):
     NONE = "none"
+    DEFLATE = "zlib"                                          # DEFLATE == GZIP
+    GZIP = "gzip"
+    BZIP2 = "bz2"
+    XZ = "xz"                                                      # XZ == LZMA
+    LZMA = "lzma"
 
 
 class EncryptAlgo(str, Enum):
     NONE = "none"
 
 
+def compress(
+    data: bytes | str | Path,
+    algo: CompressAlgo,
+    stream: bool = False,
+    chunk: int = Constants.CHUNKS
+) -> bytes | Iterator[bytes]:
+    if chunk <= 0:
+        raise ValueError("chunk must be greater than zero")
 
-                                              # pylint: disable=unused-argument
-def compress(data: bytes | str | Path, algo: CompressAlgo) -> bytes:
-    return data
+    def read_chunks() -> Iterator[bytes]:
+        if isinstance(data, Path):
+            with data.open("rb") as file:
+                while part := file.read(chunk):
+                    yield part
+        else:
+            raw = data.encode("utf-8") if isinstance(data, str) else data
+            for i in range(0, len(raw), chunk):
+                yield raw[i:i + chunk]
+
+    def compressed_chunks() -> Iterator[bytes]:
+        if algo == CompressAlgo.NONE:
+            yield from read_chunks()
+            return
+
+        if algo in (CompressAlgo.GZIP, CompressAlgo.DEFLATE):
+            obj = zlib.compressobj(
+                wbits=31 if algo == CompressAlgo.GZIP else zlib.MAX_WBITS
+            )
+        elif algo == CompressAlgo.BZIP2:
+            obj = bz2.BZ2Compressor()
+        elif algo in (CompressAlgo.LZMA, CompressAlgo.XZ):
+            obj = lzma.LZMACompressor(
+                format=lzma.FORMAT_XZ if algo == CompressAlgo.XZ
+                else lzma.FORMAT_ALONE
+            )
+        else:
+            raise ValueError(f"Unsupported compression algorithm: {algo}")
+
+        for part in read_chunks():
+            result = obj.compress(part)
+            if result:
+                yield result
+
+        result = obj.flush()
+        if result:
+            yield result
+
+    chunks = compressed_chunks()
+    return chunks if stream else b"".join(chunks)
 
 
-                                              # pylint: disable=unused-argument
-def decompress(data: bytes, algo: CompressAlgo) -> bytes:
-    return data
+def decompress(
+    data: bytes | Path,
+    algo: CompressAlgo,
+    stream: bool = False,
+    chunk: int = Constants.CHUNKS
+) -> bytes | Iterator[bytes]:
+    if chunk <= 0:
+        raise ValueError("chunk must be greater than zero")
+
+    def read_chunks() -> Iterator[bytes]:
+        if isinstance(data, Path):
+            with data.open("rb") as file:
+                while part := file.read(chunk):
+                    yield part
+        else:
+            for i in range(0, len(data), chunk):
+                yield data[i:i + chunk]
+
+    def decompressed_chunks() -> Iterator[bytes]:
+        if algo == CompressAlgo.NONE:
+            yield from read_chunks()
+            return
+
+        if algo in (CompressAlgo.DEFLATE, CompressAlgo.GZIP):
+            obj = zlib.decompressobj(
+                wbits=31 if algo == CompressAlgo.GZIP else zlib.MAX_WBITS
+            )
+        elif algo == CompressAlgo.BZIP2:
+            obj = bz2.BZ2Decompressor()
+        elif algo in (CompressAlgo.XZ, CompressAlgo.LZMA):
+            obj = lzma.LZMADecompressor(
+                format=lzma.FORMAT_XZ if algo == CompressAlgo.XZ
+                else lzma.FORMAT_ALONE
+            )
+        else:
+            raise ValueError(f"Unsupported decompression algorithm: {algo}")
+
+        for part in read_chunks():
+            while True:
+                if algo in (CompressAlgo.DEFLATE, CompressAlgo.GZIP):
+                    result = obj.decompress(part, chunk)
+                    needs_input = not obj.unconsumed_tail
+                else:
+                    result = obj.decompress(part, max_length=chunk)
+                    needs_input = obj.needs_input
+
+                if result:
+                    yield result
+
+                if obj.eof or needs_input:
+                    break
+
+                part = b""
+
+        if not obj.eof:
+            raise EOFError("Incomplete compressed stream")
+
+    result = decompressed_chunks()
+    return result if stream else b"".join(result)
 
 
-                                              # pylint: disable=unused-argument
 def encrypt(data: bytes | str | Path, algo: EncryptAlgo, key: str) -> bytes:
     return data
 
 
-                                              # pylint: disable=unused-argument
 def decrypt(data: bytes, algo: EncryptAlgo, key: str) -> bytes:
     return data
 
@@ -133,8 +240,8 @@ def _transform_plain_file(
 
     return Path(p.parent / f"{p.name}-{nxt}")
 
-
-def save_file_as(
+                                # pylint: disable=too-many-positional-arguments
+def save_file_as(                          # pylint: disable=too-many-arguments
     file: Path,
     shard_size_limit: int,
     shard_filesize_limit: int,
@@ -143,17 +250,26 @@ def save_file_as(
     compress_algo: CompressAlgo,
     vault_uuid: str | UUID,
     files_root: Path,
-    shards_root: Path
+    shards_root: Path,
+    chunk: int = Constants.CHUNKS
 ) -> Path:
     #if file.stat().st_size > shard_filesize_limit:
     if file.stat().st_size > 0:
         fout = _transform_plain_file(
             file,
             vault_uuid=vault_uuid,
-            root=files_root
+            root=files_root,
+            create=True
         )
 
-        shutil.copyfile(file, fout)
+    with fout.open("wb") as _fout:
+        for _c in compress(
+            file,
+            algo=compress_algo,
+            stream=True,
+            chunk=chunk
+        ):
+            _fout.write(_c)
 
     return fout
 

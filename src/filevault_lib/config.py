@@ -21,6 +21,7 @@ class Constants:                       # pylint: disable=too-few-public-methods
     MAX_SHARD_SIZE = 1024 * 1024 * 1024  # Max shard size 1 GB, else create new
     MAX_FILE_SIZE_IN_SHARD = 20 * 1024 * 1024         # Filesize < 20MB goes to
                                                  #  shard, else individual file
+    CHUNKS = 2 * 1024 * 1024                     # 2 MB chunk to read at a time
 
 class ConfigManager:
     def get(self, k: str, d: Any = None) -> Any:

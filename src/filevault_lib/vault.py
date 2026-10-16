@@ -131,7 +131,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
         conf_file: Path|str = None,
         conf: ConfigManager = None
     ) -> None:
-        exc_list = ["KEY"] 
+        exc_list = ["KEY"]
 
         if self.get_container():
             exc_list += ["CONTAINER"]
@@ -346,7 +346,9 @@ class Vault:                          # pylint: disable=too-many-public-methods
                         algo=encrypt_algo,
                         key=encrypt_key
                     ),
-                    algo=compress_algo
+                    algo=compress_algo,
+                    stream=False,
+                    chunk=self.get_config().get("CHUNKS")
                 ),
                 size=len(data),
                 user_meta=user_meta,
@@ -374,7 +376,9 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     algo=meta.pop("encrypt_algo"),
                     key=decrypt_key
                 ),
-                algo=meta.pop("compress_algo")
+                algo=meta.pop("compress_algo"),
+                stream=False,
+                chunk=self.get_config().get("CHUNKS")
             ) if data else None
             return (data, meta)
 
@@ -427,7 +431,9 @@ class Vault:                          # pylint: disable=too-many-public-methods
                         algo=meta.pop("encrypt_algo"),
                         key=decrypt_key
                     ),
-                    algo=meta.pop("compress_algo")
+                    algo=meta.pop("compress_algo"),
+                    stream=False,
+                    chunk=self.get_config().get("CHUNKS")
                 ), meta) for key, data, meta, decrypt_key in objs
             ]
             return objs
@@ -511,7 +517,9 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     algo=ea,
                     key=ek
                 ),
-                algo=ca
+                algo=ca,
+                stream=False,
+                chunk=self.get_config().get("CHUNKS")
             ), len(d)) for d, ea, ek, ca in zip(
                 datas,
                 encrypt_algos,
@@ -586,7 +594,8 @@ class Vault:                          # pylint: disable=too-many-public-methods
             compress_algo=compress_algo,
             vault_uuid=self.get_uuid(),
             files_root=self.get_files_root(),
-            shards_root=self.get_shards_root()
+            shards_root=self.get_shards_root(),
+            chunk=self.get_config().get("CHUNKS")
         )
 
         key = None
