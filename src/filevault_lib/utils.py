@@ -445,36 +445,104 @@ def _transform_plain_file(
 
     return Path(p.parent / f"{p.name}-{nxt}")
 
+
+def _save_as_plain_file(                   # pylint: disable=too-many-arguments
+    file: Path,
+    encrypt_algo: EncryptAlgo,
+    encrypt_key: SecretStr,
+    compress_algo: CompressAlgo,
+    vault_uuid: str | UUID,
+    files_root: Path,
+    argon_memory_kib: int,
+    argon_iterations: int,
+    argon_lanes: int,
+    chunk: int
+) -> Path:
+    fout = _transform_plain_file(
+        file,
+        vault_uuid=vault_uuid,
+        root=files_root,
+        create=True
+    )
+
+    with fout.open("wb") as _fout:
+        for _chunk in compress(
+            encrypt(
+                file,
+                algo=encrypt_algo,
+                secret=encrypt_key,
+                stream=True,
+                chunk=chunk,
+                argon_memory_kib=argon_memory_kib,
+                argon_iterations=argon_iterations,
+                argon_lanes=argon_lanes
+            ),
+            algo=compress_algo,
+            stream=True,
+            chunk=chunk
+        ):
+            _fout.write(_chunk)
+
+    return fout
+
+
+def _save_as_shard_file(                   # pylint: disable=too-many-arguments
+    file: Path,
+    shard_size_limit: int,
+    shard_filesize_limit: int,
+    encrypt_algo: EncryptAlgo,
+    encrypt_key: SecretStr,
+    compress_algo: CompressAlgo,
+    vault_uuid: str | UUID,
+    shards_root: Path,
+    argon_memory_kib: int,
+    argon_iterations: int,
+    argon_lanes: int,
+    chunk: int
+) -> Path:
+    return file
+
+
                                 # pylint: disable=too-many-positional-arguments
 def save_file_as(                          # pylint: disable=too-many-arguments
     file: Path,
     shard_size_limit: int,
     shard_filesize_limit: int,
     encrypt_algo: EncryptAlgo,
-    encrypt_key: str,
+    encrypt_key: SecretStr,
     compress_algo: CompressAlgo,
     vault_uuid: str | UUID,
     files_root: Path,
     shards_root: Path,
+    argon_memory_kib: int = Constants.ARGON_MEMORY_KIB,
+    argon_iterations: int = Constants.ARGON_ITERATIONS,
+    argon_lanes: int = Constants.ARGON_LANES,
     chunk: int = Constants.CHUNKS
 ) -> Path:
-    if file.stat().st_size > shard_filesize_limit:
-        fout = _transform_plain_file(
-            file,
-            vault_uuid=vault_uuid,
-            root=files_root,
-            create=True
-        )
+    return _save_as_plain_file(
+        file,
+        encrypt_algo=encrypt_algo,
+        encrypt_key=encrypt_key,
+        compress_algo=compress_algo,
+        vault_uuid=vault_uuid,
+        files_root=files_root,
+        argon_memory_kib=argon_memory_kib,
+        argon_iterations=argon_iterations,
+        argon_lanes=argon_lanes,
+        chunk=chunk
+    ) if file.stat().st_size > shard_filesize_limit else _save_as_shard_file(
+        file,
+        shard_size_limit=shard_size_limit,
+        shard_filesize_limit=shard_filesize_limit,
+        encrypt_algo=encrypt_algo,
+        encrypt_key=encrypt_key,
+        compress_algo=compress_algo,
+        vault_uuid=vault_uuid,
+        shards_root=shards_root,
+        argon_memory_kib=argon_memory_kib,
+        argon_iterations=argon_iterations,
+        argon_lanes=argon_lanes,
+        chunk=chunk
+    )
 
-        with fout.open("wb") as _fout:
-            for _c in compress(
-                file,
-                algo=compress_algo,
-                stream=True,
-                chunk=chunk
-            ):
-                _fout.write(_c)
 
-        return fout
-
-    return None

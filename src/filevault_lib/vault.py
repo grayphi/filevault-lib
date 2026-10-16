@@ -46,7 +46,6 @@ from filevault_lib.sqla import (
     create_schema_on,
     get_session_from,
 )
-from filevault_lib import orm                   # pylint: disable=unused-import
 from filevault_lib.db import (
     get_status,
     set_status,
@@ -344,6 +343,12 @@ class Vault:                          # pylint: disable=too-many-public-methods
         encrypt_key = (SecretStr(encrypt_key) if isinstance(encrypt_key, str)
             else encrypt_key)
 
+        enc_params = {
+            "argon_memory_kib": self.get_config().get("ARGON_MEMORY_KIB"),
+            "argon_iterations": self.get_config().get("ARGON_ITERATIONS"),
+            "argon_lanes": self.get_config().get("ARGON_LANES"),
+        }
+
         with get_session_from(self._session_local) as session:
             return add_object(
                 session=session,
@@ -354,13 +359,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                         secret=encrypt_key,
                         stream=False,
                         chunk=self.get_config().get("CHUNKS"),
-                        argon_memory_kib=self.get_config().get(
-                            "ARGON_MEMORY_KIB"
-                        ),
-                        argon_iterations=self.get_config().get(
-                            "ARGON_ITERATIONS"
-                        ),
-                        argon_lanes=self.get_config().get("ARGON_LANES")
+                        **enc_params
                     ),
                     algo=compress_algo,
                     stream=False,
@@ -369,7 +368,8 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 size=len(data),
                 user_meta=user_meta,
                 encrypt_algo=encrypt_algo,
-                compress_algo=compress_algo
+                compress_algo=compress_algo,
+                enc_params=enc_params
             )
 
 
@@ -401,9 +401,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 secret=decrypt_key,
                 stream=False,
                 chunk=self.get_config().get("CHUNKS"),
-                argon_memory_kib=self.get_config().get("ARGON_MEMORY_KIB"),
-                argon_iterations=self.get_config().get("ARGON_ITERATIONS"),
-                argon_lanes=self.get_config().get("ARGON_LANES")
+                **meta.pop("enc_params")
             ) if data else None
         except InvalidTag as exc:
             raise VaultDecryptionError(
@@ -470,9 +468,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     secret=decrypt_key,
                     stream=False,
                     chunk=self.get_config().get("CHUNKS"),
-                    argon_memory_kib=self.get_config().get("ARGON_MEMORY_KIB"),
-                    argon_iterations=self.get_config().get("ARGON_ITERATIONS"),
-                    argon_lanes=self.get_config().get("ARGON_LANES")
+                    **meta.pop("enc_params")
                 ), meta) for key, data, meta, decrypt_key in objs
             ]
         except InvalidTag as exc:
@@ -558,6 +554,12 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 ) else CompressAlgo(str(compress_algos).lower())
             ] * l
 
+        enc_params = {
+            "argon_memory_kib": self.get_config().get("ARGON_MEMORY_KIB"),
+            "argon_iterations": self.get_config().get("ARGON_ITERATIONS"),
+            "argon_lanes": self.get_config().get("ARGON_LANES"),
+        }
+
         datas = [
             (compress(
                 data=encrypt(
@@ -566,9 +568,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     secret=ek,
                     stream=False,
                     chunk=self.get_config().get("CHUNKS"),
-                    argon_memory_kib=self.get_config().get("ARGON_MEMORY_KIB"),
-                    argon_iterations=self.get_config().get("ARGON_ITERATIONS"),
-                    argon_lanes=self.get_config().get("ARGON_LANES")
+                    **enc_params
                 ),
                 algo=ca,
                 stream=False,
@@ -590,7 +590,8 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 user_metas=user_metas,
                 encrypt_algos=encrypt_algos,
                 compress_algos=compress_algos,
-                chunk_size=chunk_size
+                chunk_size=chunk_size,
+                enc_params=enc_params
             )
 
 
@@ -610,7 +611,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
         file: Path,
         user_meta: dict = None,
         encrypt_algo: EncryptAlgo = EncryptAlgo.NONE,
-        encrypt_key: str = None,
+        encrypt_key: str | SecretStr = None,
         compress_algo: CompressAlgo = CompressAlgo.NONE
     ) -> str:
         if not self.is_open:
@@ -624,6 +625,8 @@ class Vault:                          # pylint: disable=too-many-public-methods
         if not os.access(file, os.R_OK):
             raise PermissionError(f"File not readable: {file}")
 
+        encrypt_key = (SecretStr(encrypt_key) if isinstance(encrypt_key, str)
+            else encrypt_key)
         info = file.stat()
 
         meta = {
@@ -634,6 +637,11 @@ class Vault:                          # pylint: disable=too-many-public-methods
             "created_on": datetime.fromtimestamp(info.st_ctime),
             "modified_on": datetime.fromtimestamp(info.st_mtime),
             "last_accessed_on": datetime.fromtimestamp(info.st_atime),
+        }
+        enc_params = {
+            "argon_memory_kib": self.get_config().get("ARGON_MEMORY_KIB"),
+            "argon_iterations": self.get_config().get("ARGON_ITERATIONS"),
+            "argon_lanes": self.get_config().get("ARGON_LANES"),
         }
 
         file = save_file_as(
@@ -648,7 +656,8 @@ class Vault:                          # pylint: disable=too-many-public-methods
             vault_uuid=self.get_uuid(),
             files_root=self.get_files_root(),
             shards_root=self.get_shards_root(),
-            chunk=self.get_config().get("CHUNKS")
+            chunk=self.get_config().get("CHUNKS"),
+            **enc_params
         )
 
         key = None
@@ -661,6 +670,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     user_meta=user_meta,
                     encrypt_algo=encrypt_algo,
                     compress_algo=compress_algo,
+                    enc_params=enc_params,
                     **meta
                 )
         except Exception as e:

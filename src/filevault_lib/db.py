@@ -171,7 +171,8 @@ def add_object(
     size: int,
     user_meta: dict,
     encrypt_algo: EncryptAlgo,
-    compress_algo: CompressAlgo
+    compress_algo: CompressAlgo,
+    enc_params: dict
 ) -> str:
     while True:
         k = KeyringTable(fwd_ref=KeyringRef.OBJECT)
@@ -192,7 +193,8 @@ def add_object(
         disk_size=len(data),
         encrypt_algo=encrypt_algo,
         compress_algo=compress_algo,
-        user_meta=user_meta
+        user_meta=user_meta,
+        enc_params=enc_params
     )
 
     session.add(o)
@@ -229,7 +231,9 @@ def get_object(
             "encrypt_algo": obj.encrypt_algo,
             "compress_algo": obj.compress_algo,
             "created_on": obj.created_on,
-            "modified_on": obj.modified_on
+            "modified_on": obj.modified_on,
+            "enc_params": obj.enc_params
+
         }
     ) if obj else (None, None)
 
@@ -296,7 +300,8 @@ def get_objects(
             "encrypt_algo": obj.encrypt_algo,
             "compress_algo": obj.compress_algo,
             "created_on": obj.created_on,
-            "modified_on": obj.modified_on
+            "modified_on": obj.modified_on,
+            "enc_params": obj.enc_params
         }
     ) for obj in objs]
 
@@ -311,6 +316,7 @@ def add_objects(
     user_metas: list[dict],
     encrypt_algos: list[EncryptAlgo],
     compress_algos: list[CompressAlgo],
+    enc_params: dict,
     chunk_size: int = 512
 ) -> list[str]:
     keys = []
@@ -349,7 +355,8 @@ def add_objects(
                 disk_size=len(data),
                 encrypt_algo=encrypt_algo,
                 compress_algo=compress_algo,
-                user_meta=user_meta
+                user_meta=user_meta,
+                enc_params=enc_params
             )]
             keys += [k.key]
 
@@ -408,7 +415,8 @@ def add_file(
     ownership: str,
     created_on: datetime,
     modified_on: datetime,
-    last_accessed_on: datetime
+    last_accessed_on: datetime,
+    enc_params: dict
 ) -> str:
     while True:
         k = KeyringTable(fwd_ref=KeyringRef.FILES)
@@ -435,11 +443,13 @@ def add_file(
         ownership=ownership,
         created_on=created_on,
         modified_on=modified_on,
-        last_accessed_on=last_accessed_on
+        last_accessed_on=last_accessed_on,
+        enc_params=enc_params
     )
 
     session.add(o)
     session.flush()
 
     return k.key
+
 
