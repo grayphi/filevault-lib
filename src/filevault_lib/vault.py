@@ -387,20 +387,20 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 session=session,
                 key=key
             )
-            data = decompress(
-                data=decrypt(
+            data=decrypt(
+                data = decompress(
                     data=data,
-                    algo=meta.pop("encrypt_algo"),
-                    secret=decrypt_key,
+                    algo=meta.pop("compress_algo"),
                     stream=False,
-                    chunk=self.get_config().get("CHUNKS"),
-                    argon_memory_kib=self.get_config().get("ARGON_MEMORY_KIB"),
-                    argon_iterations=self.get_config().get("ARGON_ITERATIONS"),
-                    argon_lanes=self.get_config().get("ARGON_LANES")
+                    chunk=self.get_config().get("CHUNKS")
                 ),
-                algo=meta.pop("compress_algo"),
+                algo=meta.pop("encrypt_algo"),
+                secret=decrypt_key,
                 stream=False,
-                chunk=self.get_config().get("CHUNKS")
+                chunk=self.get_config().get("CHUNKS"),
+                argon_memory_kib=self.get_config().get("ARGON_MEMORY_KIB"),
+                argon_iterations=self.get_config().get("ARGON_ITERATIONS"),
+                argon_lanes=self.get_config().get("ARGON_LANES")
             ) if data else None
             return (data, meta)
 
@@ -451,24 +451,20 @@ class Vault:                          # pylint: disable=too-many-public-methods
             )
             objs = [(*o, k) for o, k in zip(objs, decrypt_keys)]
             objs = [(key,
-                decompress(
-                    data=decrypt(
+                decrypt(
+                    data=decompress(
                         data=data,
-                        algo=meta.pop("encrypt_algo"),
-                        secret=decrypt_key,
+                        algo=meta.pop("compress_algo"),
                         stream=False,
-                        chunk=self.get_config().get("CHUNKS"),
-                        argon_memory_kib=self.get_config().get(
-                            "ARGON_MEMORY_KIB"
-                        ),
-                        argon_iterations=self.get_config().get(
-                            "ARGON_ITERATIONS"
-                        ),
-                        argon_lanes=self.get_config().get("ARGON_LANES")
+                        chunk=self.get_config().get("CHUNKS")
                     ),
-                    algo=meta.pop("compress_algo"),
+                    algo=meta.pop("encrypt_algo"),
+                    secret=decrypt_key,
                     stream=False,
-                    chunk=self.get_config().get("CHUNKS")
+                    chunk=self.get_config().get("CHUNKS"),
+                    argon_memory_kib=self.get_config().get("ARGON_MEMORY_KIB"),
+                    argon_iterations=self.get_config().get("ARGON_ITERATIONS"),
+                    argon_lanes=self.get_config().get("ARGON_LANES")
                 ), meta) for key, data, meta, decrypt_key in objs
             ]
             return objs
