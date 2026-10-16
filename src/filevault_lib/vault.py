@@ -432,7 +432,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
         if not self.is_open:
             raise VaultNotOpenError("Vault is not open.")
 
-        if decrypt_keys and isinstance(type(decrypt_keys), list):
+        if decrypt_keys and isinstance(decrypt_keys, list):
             if len(decrypt_keys) != len(keys):
                 logger.exception(
                     "Number of encrypt keys must match total "
@@ -499,7 +499,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
         ]
         l = len(datas)
 
-        if user_metas and isinstance(type(user_metas), list):
+        if user_metas and isinstance(user_metas, list):
             if l != len(user_metas):
                 logger.exception(
                     "user_metas should be of same length as of data."
@@ -510,7 +510,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
         else:
             user_metas = [user_metas] * l
 
-        if encrypt_algos and isinstance(type(encrypt_algos), list):
+        if encrypt_algos and isinstance(encrypt_algos, list):
             if l != len(encrypt_algos):
                 logger.exception(
                     "encrypt_algos should be of same length as of data."
@@ -520,11 +520,11 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 )
         else:
             encrypt_algos = [
-                encrypt_algos if isinstance(type(encrypt_algos), EncryptAlgo)
+                encrypt_algos if isinstance(encrypt_algos, EncryptAlgo)
                 else EncryptAlgo(str(encrypt_algos).lower())
             ] * l
 
-        if encrypt_keys and isinstance(type(encrypt_keys), list):
+        if encrypt_keys and isinstance(encrypt_keys, list):
             if l != len(encrypt_keys):
                 logger.exception(
                     "encrypt_keys should be of same length as of data."
@@ -539,7 +539,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
             SecretStr(k) if isinstance(k, str) else k for k in encrypt_keys
         ]
 
-        if compress_algos and isinstance(type(compress_algos), list):
+        if compress_algos and isinstance(compress_algos, list):
             if l != len(compress_algos):
                 logger.exception(
                     "compress_algos should be of same length as of data."
@@ -550,7 +550,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
         else:
             compress_algos = [
                 compress_algos if isinstance(
-                    type(compress_algos), CompressAlgo
+                    compress_algos, CompressAlgo
                 ) else CompressAlgo(str(compress_algos).lower())
             ] * l
 
