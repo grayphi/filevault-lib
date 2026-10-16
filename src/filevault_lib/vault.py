@@ -10,6 +10,8 @@ from pathlib import Path
 from uuid import UUID
 from datetime import datetime
 
+from pydantic import SecretStr
+
 from filevault_lib.config import (
     ConfigManager,
     get_constants,
@@ -328,7 +330,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
         data: bytes | str,
         user_meta: dict = None,
         encrypt_algo: EncryptAlgo = EncryptAlgo.NONE,
-        encrypt_key: str = None,
+        encrypt_key: str | SecretStr = None,
         compress_algo: CompressAlgo = CompressAlgo.NONE
     ) -> str:
         if not self.is_open:
@@ -337,6 +339,9 @@ class Vault:                          # pylint: disable=too-many-public-methods
         if isinstance(data, str):
             data = data.encode("utf-8")
 
+        encrypt_key = (SecretStr(encrypt_key) if isinstance(encrypt_key, str)
+            else encrypt_key)
+
         with get_session_from(self._session_local) as session:
             return add_object(
                 session=session,
@@ -344,7 +349,16 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     data=encrypt(
                         data=data,
                         algo=encrypt_algo,
-                        key=encrypt_key
+                        secret=encrypt_key,
+                        stream=False,
+                        chunk=self.get_config().get("CHUNKS"),
+                        argon_memory_kib=self.get_config().get(
+                            "ARGON_MEMORY_KIB"
+                        ),
+                        argon_iterations=self.get_config().get(
+                            "ARGON_ITERATIONS"
+                        ),
+                        argon_lanes=self.get_config().get("ARGON_LANES")
                     ),
                     algo=compress_algo,
                     stream=False,
@@ -360,10 +374,13 @@ class Vault:                          # pylint: disable=too-many-public-methods
     def get(
         self,
         key: str,
-        decrypt_key: str = None
+        decrypt_key: str | SecretStr = None
     ) -> (bytes, dict):
         if not self.is_open:
             raise VaultNotOpenError("Vault is not open.")
+
+        decrypt_key = (SecretStr(decrypt_key) if isinstance(decrypt_key, str)
+            else decrypt_key)
 
         with get_session_from(self._session_local) as session:
             data, meta = get_object(
@@ -374,7 +391,12 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 data=decrypt(
                     data=data,
                     algo=meta.pop("encrypt_algo"),
-                    key=decrypt_key
+                    secret=decrypt_key,
+                    stream=False,
+                    chunk=self.get_config().get("CHUNKS"),
+                    argon_memory_kib=self.get_config().get("ARGON_MEMORY_KIB"),
+                    argon_iterations=self.get_config().get("ARGON_ITERATIONS"),
+                    argon_lanes=self.get_config().get("ARGON_LANES")
                 ),
                 algo=meta.pop("compress_algo"),
                 stream=False,
@@ -400,7 +422,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
     def mget(
         self,
         keys: list[str],
-        decrypt_keys: str | list[str] = None
+        decrypt_keys: str | SecretStr | list[str | SecretStr] = None
     ) -> list[(str, bytes, dict)]:
         if not self.is_open:
             raise VaultNotOpenError("Vault is not open.")
@@ -418,6 +440,10 @@ class Vault:                          # pylint: disable=too-many-public-methods
         else:
             decrypt_keys = [decrypt_keys] * len(keys)
 
+        decrypt_keys = [
+            SecretStr(k) if isinstance(k, str) else k for k in decrypt_keys
+        ]
+
         with get_session_from(self._session_local) as session:
             objs = get_objects(
                 session=session,
@@ -429,7 +455,16 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     data=decrypt(
                         data=data,
                         algo=meta.pop("encrypt_algo"),
-                        key=decrypt_key
+                        secret=decrypt_key,
+                        stream=False,
+                        chunk=self.get_config().get("CHUNKS"),
+                        argon_memory_kib=self.get_config().get(
+                            "ARGON_MEMORY_KIB"
+                        ),
+                        argon_iterations=self.get_config().get(
+                            "ARGON_ITERATIONS"
+                        ),
+                        argon_lanes=self.get_config().get("ARGON_LANES")
                     ),
                     algo=meta.pop("compress_algo"),
                     stream=False,
@@ -446,7 +481,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
         datas: list[bytes | str],
         user_metas: dict | list[dict] = None,
         encrypt_algos: EncryptAlgo | list[EncryptAlgo] = None,
-        encrypt_keys: str | list[str] = None,
+        encrypt_keys: str | SecretStr | list[str | SecretStr] = None,
         compress_algos: CompressAlgo | list[CompressAlgo] = None,
         chunk_size: int = 512
     ) -> list[str]:
@@ -460,7 +495,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
         l = len(datas)
 
         if user_metas and isinstance(type(user_metas), list):
-            if l == len(user_metas):
+            if l != len(user_metas):
                 logger.exception(
                     "user_metas should be of same length as of data."
                 )
@@ -471,7 +506,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
             user_metas = [user_metas] * l
 
         if encrypt_algos and isinstance(type(encrypt_algos), list):
-            if l == len(encrypt_algos):
+            if l != len(encrypt_algos):
                 logger.exception(
                     "encrypt_algos should be of same length as of data."
                 )
@@ -485,7 +520,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
             ] * l
 
         if encrypt_keys and isinstance(type(encrypt_keys), list):
-            if l == len(encrypt_keys):
+            if l != len(encrypt_keys):
                 logger.exception(
                     "encrypt_keys should be of same length as of data."
                 )
@@ -495,8 +530,12 @@ class Vault:                          # pylint: disable=too-many-public-methods
         else:
             encrypt_keys = [encrypt_keys] * l
 
+        encrypt_keys = [
+            SecretStr(k) if isinstance(k, str) else k for k in encrypt_keys
+        ]
+
         if compress_algos and isinstance(type(compress_algos), list):
-            if l == len(compress_algos):
+            if l != len(compress_algos):
                 logger.exception(
                     "compress_algos should be of same length as of data."
                 )
@@ -515,7 +554,12 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 data=encrypt(
                     data=d,
                     algo=ea,
-                    key=ek
+                    secret=ek,
+                    stream=False,
+                    chunk=self.get_config().get("CHUNKS"),
+                    argon_memory_kib=self.get_config().get("ARGON_MEMORY_KIB"),
+                    argon_iterations=self.get_config().get("ARGON_ITERATIONS"),
+                    argon_lanes=self.get_config().get("ARGON_LANES")
                 ),
                 algo=ca,
                 stream=False,

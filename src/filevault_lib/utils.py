@@ -3,6 +3,7 @@
 # pylint: disable=missing-class-docstring, trailing-newlines
 
 
+import os
 import logging
 from uuid import UUID, uuid5
 from pathlib import Path
@@ -15,11 +16,47 @@ from functools import lru_cache
 import zlib
 import bz2
 import lzma
+import struct
+from io import BytesIO
+
+from pydantic import SecretStr
+from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
 from filevault_lib.config import Constants
 
 
 logger = logging.getLogger(__name__)
+
+
+_MAGIC = b"FVENC001"
+_HEADER_SIZE = 32
+_TAG_SIZE = 16
+_MAX_CHUNKS = 2**32 - 1
+
+
+class KeyringRef(str, Enum):
+    UNALLOTED = "U"
+    OBJECT = "O"
+    FILES = "F"
+    SHARDS = "S"
+    CACHE = "C"
+
+
+class CompressAlgo(str, Enum):
+    NONE = "none"
+    DEFLATE = "zlib"                                          # DEFLATE == GZIP
+    GZIP = "gzip"
+    BZIP2 = "bz2"
+    XZ = "xz"                                                      # XZ == LZMA
+    LZMA = "lzma"
+
+
+class EncryptAlgo(str, Enum):
+    NONE = "none"
+    AES_GCM = "aes-gcm"
+    CHACHA20_POLY1305 = "chacha20-poly1305"
 
 
 def get_vault_uuid(
@@ -39,14 +76,6 @@ def path2url(p: Path | str) -> str:
     return "sqlite:///" + Path(p).resolve().as_posix() if p else ""
 
 
-class KeyringRef(str, Enum):
-    UNALLOTED = "U"
-    OBJECT = "O"
-    FILES = "F"
-    SHARDS = "S"
-    CACHE = "C"
-
-
 def generate_key():
     @lru_cache(maxsize=1)
     def u():
@@ -57,19 +86,6 @@ def generate_key():
     return "".join(
         secrets.choice(u()) for _ in range(secrets.randbelow(123) + 6)
     )
-
-
-class CompressAlgo(str, Enum):
-    NONE = "none"
-    DEFLATE = "zlib"                                          # DEFLATE == GZIP
-    GZIP = "gzip"
-    BZIP2 = "bz2"
-    XZ = "xz"                                                      # XZ == LZMA
-    LZMA = "lzma"
-
-
-class EncryptAlgo(str, Enum):
-    NONE = "none"
 
 
 def compress(
@@ -184,12 +200,201 @@ def decompress(
     return result if stream else b"".join(result)
 
 
-def encrypt(data: bytes | str | Path, algo: EncryptAlgo, key: str) -> bytes:
-    return data
+def _derive_key(
+    passkey: SecretStr,
+    salt: bytes,
+    argon_iterations: int = Constants.ARGON_ITERATIONS,
+    argon_lanes: int = Constants.ARGON_LANES,
+    argon_memory_kib: int = Constants.ARGON_MEMORY_KIB
+) -> bytes:
+    return Argon2id(
+        salt=salt,
+        length=32,
+        iterations=argon_iterations,
+        lanes=argon_lanes,
+        memory_cost=argon_memory_kib,
+    ).derive(passkey.get_secret_value().encode("utf-8"))
 
 
-def decrypt(data: bytes, algo: EncryptAlgo, key: str) -> bytes:
-    return data
+def _make_cipher(algo: EncryptAlgo, key: bytes):
+    if algo == EncryptAlgo.AES_GCM:
+        return AESGCM(key)
+
+    if algo == EncryptAlgo.CHACHA20_POLY1305:
+        return ChaCha20Poly1305(key)
+
+    raise ValueError(f"Unsupported encryption algorithm: {algo}")
+
+
+def _read_exact(source, size: int) -> bytes:
+    result = bytearray()
+    while len(result) < size:
+        part = source.read(size - len(result))
+        if not part:
+            raise EOFError("Incomplete encrypted stream")
+        result.extend(part)
+    return bytes(result)
+
+                                # pylint: disable=too-many-positional-arguments
+def encrypt(                               # pylint: disable=too-many-arguments
+    data: bytes | str | Path,
+    algo: EncryptAlgo,
+    secret: SecretStr,
+    stream: bool = False,
+    chunk: int = Constants.CHUNKS,
+    argon_memory_kib: int = Constants.ARGON_MEMORY_KIB,
+    argon_iterations: int = Constants.ARGON_ITERATIONS,
+    argon_lanes: int = Constants.ARGON_LANES
+) -> bytes | Iterator[bytes]:
+    if chunk <= 0:
+        raise ValueError("chunk must be greater than zero")
+
+    def read_chunks() -> Iterator[bytes]:
+        if isinstance(data, Path):
+            with data.open("rb") as file:
+                while part := file.read(chunk):
+                    yield part
+        else:
+            raw = data.encode("utf-8") if isinstance(data, str) else data
+            for i in range(0, len(raw), chunk):
+                yield raw[i:i + chunk]
+
+    def encrypted_chunks() -> Iterator[bytes]:
+        if not isinstance(algo, EncryptAlgo):
+            raise ValueError(f"Unsupported encryption algorithm: {algo}")
+
+        if algo == EncryptAlgo.NONE:
+            yield from read_chunks()
+            return
+
+        if not (isinstance(secret, SecretStr) and secret.get_secret_value()):
+            raise ValueError(
+                "Passphrase is required for encryption,"
+                " and in correct type."
+            )
+
+        salt = os.urandom(16)
+        nonce_prefix = os.urandom(8)
+        header = _MAGIC + salt + nonce_prefix
+        cipher = _make_cipher(algo, _derive_key(
+            passkey=secret,
+            salt=salt,
+            argon_iterations=argon_iterations,
+            argon_lanes=argon_lanes,
+            argon_memory_kib=argon_memory_kib
+        ))
+        yield header
+
+        counter = 0
+        for part in read_chunks():
+            if counter >= _MAX_CHUNKS:
+                raise ValueError("Maximum encrypted chunk count exceeded")
+
+            nonce = nonce_prefix + struct.pack(">I", counter)
+            aad = header + struct.pack(">I", counter) + b"\x00"
+            ciphertext = cipher.encrypt(nonce, part, aad)
+
+            yield b"\x00" + struct.pack(">I", len(ciphertext)) + ciphertext
+            counter += 1
+
+        nonce = nonce_prefix + struct.pack(">I", counter)
+        aad = header + struct.pack(">I", counter) + b"\x01"
+        final_record = cipher.encrypt(nonce, b"", aad)
+        yield b"\x01" + struct.pack(">I", len(final_record)) + final_record
+
+    result = encrypted_chunks()
+    return result if stream else b"".join(result)
+
+                                              # pylint: disable=too-many-locals
+                                # pylint: disable=too-many-positional-arguments
+def decrypt(                               # pylint: disable=too-many-arguments
+    data: bytes | Path,
+    algo: EncryptAlgo,
+    secret: SecretStr,
+    stream: bool = False,
+    chunk: int = Constants.CHUNKS,
+    argon_memory_kib: int = Constants.ARGON_MEMORY_KIB,
+    argon_iterations: int = Constants.ARGON_ITERATIONS,
+    argon_lanes: int = Constants.ARGON_LANES
+) -> bytes | Iterator[bytes]:
+    if chunk <= 0:
+        raise ValueError("chunk must be greater than zero")
+
+    def read_chunks(source) -> Iterator[bytes]:
+        while part := source.read(chunk):
+            yield part
+
+                                            # pylint: disable=too-many-branches
+    def decrypted_chunks(source) -> Iterator[bytes]:
+        if not isinstance(algo, EncryptAlgo):
+            raise ValueError(f"Unsupported encryption algorithm: {algo}")
+
+        if algo == EncryptAlgo.NONE:
+            yield from read_chunks(source)
+            return
+
+        if not (isinstance(secret, SecretStr) and secret.get_secret_value()):
+            raise ValueError(
+                "Passphrase is required for decryption,"
+                " and in correct type."
+            )
+
+        header = _read_exact(source, _HEADER_SIZE)
+        if header[:len(_MAGIC)] != _MAGIC:
+            raise ValueError("Invalid encrypted file format")
+
+        salt = header[8:24]
+        nonce_prefix = header[24:32]
+        cipher = _make_cipher(algo, _derive_key(
+            passkey=secret,
+            salt=salt,
+            argon_iterations=argon_iterations,
+            argon_lanes=argon_lanes,
+            argon_memory_kib=argon_memory_kib
+        ))
+        counter = 0
+
+        while True:
+            record_type = _read_exact(source, 1)
+            length = struct.unpack(">I", _read_exact(source, 4))[0]
+
+            if record_type == b"\x00":
+                if counter >= _MAX_CHUNKS:
+                    raise ValueError("Maximum encrypted chunk count exceeded")
+                if not _TAG_SIZE <= length <= chunk + _TAG_SIZE:
+                    raise ValueError("Invalid encrypted chunk length")
+            elif record_type == b"\x01":
+                if length != _TAG_SIZE:
+                    raise ValueError("Invalid final record length")
+            else:
+                raise ValueError("Invalid encrypted record type")
+
+            ciphertext = _read_exact(source, length)
+            nonce = nonce_prefix + struct.pack(">I", counter)
+            aad = header + struct.pack(">I", counter) + record_type
+            plaintext = cipher.decrypt(nonce, ciphertext, aad)
+
+            if record_type == b"\x01":
+                if plaintext:
+                    raise ValueError("Invalid final record")
+                if source.read(1):
+                    raise ValueError("Unexpected trailing data")
+                return
+
+            if plaintext:
+                yield plaintext
+            counter += 1
+
+    def output_chunks() -> Iterator[bytes]:
+        if isinstance(data, Path):
+            with data.open("rb") as source:
+                yield from decrypted_chunks(source)
+        else:
+            with BytesIO(data) as source:
+                yield from decrypted_chunks(source)
+
+    result = output_chunks()
+    return result if stream else b"".join(result)
 
 
 def _transform_plain_file(
@@ -253,8 +458,7 @@ def save_file_as(                          # pylint: disable=too-many-arguments
     shards_root: Path,
     chunk: int = Constants.CHUNKS
 ) -> Path:
-    #if file.stat().st_size > shard_filesize_limit:
-    if file.stat().st_size > 0:
+    if file.stat().st_size > shard_filesize_limit:
         fout = _transform_plain_file(
             file,
             vault_uuid=vault_uuid,
@@ -262,14 +466,15 @@ def save_file_as(                          # pylint: disable=too-many-arguments
             create=True
         )
 
-    with fout.open("wb") as _fout:
-        for _c in compress(
-            file,
-            algo=compress_algo,
-            stream=True,
-            chunk=chunk
-        ):
-            _fout.write(_c)
+        with fout.open("wb") as _fout:
+            for _c in compress(
+                file,
+                algo=compress_algo,
+                stream=True,
+                chunk=chunk
+            ):
+                _fout.write(_c)
 
-    return fout
+        return fout
 
+    return None

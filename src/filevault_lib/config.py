@@ -22,6 +22,11 @@ class Constants:                       # pylint: disable=too-few-public-methods
     MAX_FILE_SIZE_IN_SHARD = 20 * 1024 * 1024         # Filesize < 20MB goes to
                                                  #  shard, else individual file
     CHUNKS = 2 * 1024 * 1024                     # 2 MB chunk to read at a time
+    # Performance-oriented Argon2id settings.
+    ARGON_MEMORY_KIB = 8 * 1024                                     # 8 MiB
+    ARGON_ITERATIONS = 1
+    ARGON_LANES = 1
+
 
 class ConfigManager:
     def get(self, k: str, d: Any = None) -> Any:
