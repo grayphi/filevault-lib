@@ -8,7 +8,7 @@ import logging
 from uuid import UUID, uuid5
 from pathlib import Path
 from enum import Enum
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 import secrets
 import string
 import random
@@ -59,6 +59,31 @@ class EncryptAlgo(str, Enum):
     CHACHA20_POLY1305 = "chacha20-poly1305"
 
 
+class BytesStream:
+    def __init__(self, data: Iterable[bytes]):
+        self._data: Iterator[bytes] = iter(data)
+        self._buffer = bytearray()
+        self._eof = False
+
+    def read(self, size: int = -1) -> bytes:
+        if size < 0:
+            self._buffer.extend(b"".join(self._data))
+            self._eof = True
+            result = bytes(self._buffer)
+            self._buffer.clear()
+            return result
+
+        while len(self._buffer) < size and not self._eof:
+            try:
+                self._buffer.extend(next(self._data))
+            except StopIteration:
+                self._eof = True
+
+        result = bytes(self._buffer[:size])
+        del self._buffer[:size]
+        return result
+
+
 def get_vault_uuid(
     key: str,
     container: Path,
@@ -89,7 +114,7 @@ def generate_key():
 
 
 def compress(
-    data: bytes | str | Path,
+    data: bytes | str | Path | Iterable[bytes],
     algo: CompressAlgo,
     stream: bool = False,
     chunk: int = Constants.CHUNKS
@@ -102,10 +127,19 @@ def compress(
             with data.open("rb") as file:
                 while part := file.read(chunk):
                     yield part
-        else:
+        elif isinstance(data, (str, bytes)):
             raw = data.encode("utf-8") if isinstance(data, str) else data
             for i in range(0, len(raw), chunk):
                 yield raw[i:i + chunk]
+        else:
+            buffer = bytearray()
+            for part in data:
+                buffer.extend(part)
+                while len(buffer) >= chunk:
+                    yield bytes(buffer[:chunk])
+                    del buffer[:chunk]
+            if buffer:
+                yield bytes(buffer)
 
     def compressed_chunks() -> Iterator[bytes]:
         if algo == CompressAlgo.NONE:
@@ -140,7 +174,7 @@ def compress(
 
 
 def decompress(
-    data: bytes | Path,
+    data: bytes | Path | Iterable[bytes],
     algo: CompressAlgo,
     stream: bool = False,
     chunk: int = Constants.CHUNKS
@@ -153,9 +187,18 @@ def decompress(
             with data.open("rb") as file:
                 while part := file.read(chunk):
                     yield part
-        else:
+        elif isinstance(data, bytes):
             for i in range(0, len(data), chunk):
                 yield data[i:i + chunk]
+        else:
+            buffer = bytearray()
+            for part in data:
+                buffer.extend(part)
+                while len(buffer) >= chunk:
+                    yield bytes(buffer[:chunk])
+                    del buffer[:chunk]
+            if buffer:
+                yield bytes(buffer)
 
     def decompressed_chunks() -> Iterator[bytes]:
         if algo == CompressAlgo.NONE:
@@ -237,7 +280,7 @@ def _read_exact(source, size: int) -> bytes:
 
                                 # pylint: disable=too-many-positional-arguments
 def encrypt(                               # pylint: disable=too-many-arguments
-    data: bytes | str | Path,
+    data: bytes | str | Path | Iterable[bytes],
     algo: EncryptAlgo,
     secret: SecretStr,
     stream: bool = False,
@@ -254,10 +297,19 @@ def encrypt(                               # pylint: disable=too-many-arguments
             with data.open("rb") as file:
                 while part := file.read(chunk):
                     yield part
-        else:
+        elif isinstance(data, (str, bytes)):
             raw = data.encode("utf-8") if isinstance(data, str) else data
             for i in range(0, len(raw), chunk):
                 yield raw[i:i + chunk]
+        else:
+            buffer = bytearray()
+            for part in data:
+                buffer.extend(part)
+                while len(buffer) >= chunk:
+                    yield bytes(buffer[:chunk])
+                    del buffer[:chunk]
+            if buffer:
+                yield bytes(buffer)
 
     def encrypted_chunks() -> Iterator[bytes]:
         if not isinstance(algo, EncryptAlgo):
@@ -308,7 +360,7 @@ def encrypt(                               # pylint: disable=too-many-arguments
                                               # pylint: disable=too-many-locals
                                 # pylint: disable=too-many-positional-arguments
 def decrypt(                               # pylint: disable=too-many-arguments
-    data: bytes | Path,
+    data: bytes | Path | Iterable[bytes],
     algo: EncryptAlgo,
     secret: SecretStr,
     stream: bool = False,
@@ -389,9 +441,11 @@ def decrypt(                               # pylint: disable=too-many-arguments
         if isinstance(data, Path):
             with data.open("rb") as source:
                 yield from decrypted_chunks(source)
-        else:
+        elif isinstance(data, bytes):
             with BytesIO(data) as source:
                 yield from decrypted_chunks(source)
+        else:
+            yield from decrypted_chunks(BytesStream(data))
 
     result = output_chunks()
     return result if stream else b"".join(result)
