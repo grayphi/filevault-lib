@@ -656,6 +656,8 @@ class Vault:                          # pylint: disable=too-many-public-methods
             vault_uuid=self.get_uuid(),
             files_root=self.get_files_root(),
             shards_root=self.get_shards_root(),
+            cache_root=self.get_cache_root(),
+            loose_shard_size=self.get_config().get("LOOSE_SHARD_SIZE"),
             chunk=self.get_config().get("CHUNKS"),
             **enc_params
         )

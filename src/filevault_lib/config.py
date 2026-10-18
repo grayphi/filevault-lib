@@ -21,6 +21,14 @@ class Constants:                       # pylint: disable=too-few-public-methods
     MAX_SHARD_SIZE = 1024 * 1024 * 1024  # Max shard size 1 GB, else create new
     MAX_FILE_SIZE_IN_SHARD = 20 * 1024 * 1024         # Filesize < 20MB goes to
                                                  #  shard, else individual file
+    LOOSE_SHARD_SIZE = True      # if shard size is loosy, then shard available
+                                 #  size slot is calculated from base file,
+                                 #  else calculated from encrypted + compressed
+                                 #  file which actually goes into shard, strict
+                                 #  size increase operation time, as it needs
+                                 #  final compressed + encrypted file to be
+                                 #  exists before size caculation, so one write
+                                 #  and one read time got added
     CHUNKS = 2 * 1024 * 1024                     # 2 MB chunk to read at a time
     # Performance-oriented Argon2id settings.
     ARGON_MEMORY_KIB = 8 * 1024                                     # 8 MiB

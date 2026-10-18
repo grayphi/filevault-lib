@@ -18,6 +18,7 @@ import bz2
 import lzma
 import struct
 from io import BytesIO
+from zipfile import ZIP_STORED, ZipFile
 
 from pydantic import SecretStr
 from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
@@ -59,7 +60,7 @@ class EncryptAlgo(str, Enum):
     CHACHA20_POLY1305 = "chacha20-poly1305"
 
 
-class BytesStream:
+class BytesStream:                     # pylint: disable=too-few-public-methods
     def __init__(self, data: Iterable[bytes]):
         self._data: Iterator[bytes] = iter(data)
         self._buffer = bytearray()
@@ -451,7 +452,7 @@ def decrypt(                               # pylint: disable=too-many-arguments
     return result if stream else b"".join(result)
 
 
-def _transform_plain_file(
+def _transform_file(
     file: Path,
     vault_uuid: str | UUID,
     root: Path = None,
@@ -500,6 +501,69 @@ def _transform_plain_file(
     return Path(p.parent / f"{p.name}-{nxt}")
 
 
+def _new_shard(
+    vault_uuid: str | UUID,
+    shards_root: Path,
+    shard_size_limit: int,
+    shard_filesize_limit: int,
+    create: bool = True
+) -> Path:
+    _u = str(
+        uuid5(
+            UUID(vault_uuid),
+            "%s-%s:%s/%s" % (         # pylint: disable=consider-using-f-string
+                shards_root.name,
+                len([s for s in shards_root.rglob("*") if s.is_file()]) + 1,
+                shard_size_limit,
+                shard_filesize_limit
+            )
+        )
+    ).replace("-", "")
+    _u = [_u[i:i+2] for i in range(0, len(_u), 2)]
+    _u = _u[0:-8] + ["".join(_u[-8:])]
+
+    p = Path(shards_root)
+    for i in _u:
+        p = p / i
+
+    if shards_root and create:
+        p.parent.mkdir(parents=True, exist_ok=True)
+
+    if not p.parent.exists():
+        return p
+
+    _f = [
+        i.name.partition("-")[2]
+        for i in Path(p.parent).iterdir() if i.name.startswith(p.name)
+    ]
+
+    try:
+        _f.remove("")
+    except ValueError:
+        pass
+
+    try:
+        nxt = max(int(i, 16) for i in _f) + 1
+    except ValueError:
+        nxt = 0
+
+    nxt = f"{nxt:02x}"
+    nxt = nxt.zfill(len(nxt) + len(nxt) % 2)
+
+    return Path(p.parent / f"{p.name}-{nxt}")
+
+
+def get_available_shard(
+    shards_root: Path,
+    need_space: int,
+    shard_size_limit: int,
+) -> Path:
+    for shard in [s for s in shards_root.rglob("*") if s.is_file()]:
+        if shard_size_limit - shard.stat().st_size > need_space:
+            return shard
+    return None
+
+
 def _save_as_plain_file(                   # pylint: disable=too-many-arguments
     file: Path,
     encrypt_algo: EncryptAlgo,
@@ -507,12 +571,12 @@ def _save_as_plain_file(                   # pylint: disable=too-many-arguments
     compress_algo: CompressAlgo,
     vault_uuid: str | UUID,
     files_root: Path,
-    argon_memory_kib: int,
-    argon_iterations: int,
-    argon_lanes: int,
-    chunk: int
+    argon_memory_kib: int = Constants.ARGON_MEMORY_KIB,
+    argon_iterations: int = Constants.ARGON_ITERATIONS,
+    argon_lanes: int = Constants.ARGON_LANES,
+    chunk: int = Constants.CHUNKS
 ) -> Path:
-    fout = _transform_plain_file(
+    fout = _transform_file(
         file,
         vault_uuid=vault_uuid,
         root=files_root,
@@ -549,12 +613,105 @@ def _save_as_shard_file(                   # pylint: disable=too-many-arguments
     compress_algo: CompressAlgo,
     vault_uuid: str | UUID,
     shards_root: Path,
-    argon_memory_kib: int,
-    argon_iterations: int,
-    argon_lanes: int,
-    chunk: int
-) -> Path:
-    return file
+    cache_root: Path,
+    loose_shard_size: bool,
+    argon_memory_kib: int = Constants.ARGON_MEMORY_KIB,
+    argon_iterations: int = Constants.ARGON_ITERATIONS,
+    argon_lanes: int = Constants.ARGON_LANES,
+    chunk: int = Constants.CHUNKS
+) -> (Path, Path):
+    frel = _transform_file(
+        file,
+        vault_uuid=vault_uuid,
+        root=shards_root,
+        create=False
+    )
+
+    frel = frel.relative_to(shards_root)
+
+    fcache = cache_root / frel
+    if not loose_shard_size:
+        fcache.parent.mkdir(parents=True, exist_ok=True)
+
+        while True:
+            counter = 0
+            try:
+                fcache.touch(exist_ok=False)
+                del counter
+                break
+            except FileExistsError:
+                counter += 1
+                fcache = fcache.parent / f"{fcache.name}-{counter}"
+                continue
+
+        with fcache.open("wb") as _fc:
+            for _chunk in compress(
+                encrypt(
+                    file,
+                    algo=encrypt_algo,
+                    secret=encrypt_key,
+                    stream=True,
+                    chunk=chunk,
+                    argon_memory_kib=argon_memory_kib,
+                    argon_iterations=argon_iterations,
+                    argon_lanes=argon_lanes
+                ),
+                algo=compress_algo,
+                stream=True,
+                chunk=chunk
+            ):
+                _fc.write(_chunk)
+
+    shard = get_available_shard(
+        shards_root=shards_root,
+        shard_size_limit=shard_size_limit,
+        need_space=(
+            file.stat().st_size if loose_shard_size else fcache.stat().st_size
+        )
+    )
+
+    if not shard:
+        shard = _new_shard(
+            vault_uuid=vault_uuid,
+            shards_root=shards_root,
+            shard_size_limit=shard_size_limit,
+            shard_filesize_limit=shard_filesize_limit,
+            create=True
+        )
+
+    with ZipFile(shard, mode="a", compression=ZIP_STORED) as archive:
+        if loose_shard_size:
+            with archive.open(
+                frel.as_posix(),
+                mode="w",
+                force_zip64=True
+            ) as archf:
+                for _chunk in compress(
+                    encrypt(
+                        file,
+                        algo=encrypt_algo,
+                        secret=encrypt_key,
+                        stream=True,
+                        chunk=chunk,
+                        argon_memory_kib=argon_memory_kib,
+                        argon_iterations=argon_iterations,
+                        argon_lanes=argon_lanes
+                    ),
+                    algo=compress_algo,
+                    stream=True,
+                    chunk=chunk
+                ):
+                    archf.write(_chunk)
+        else:
+            archive.write(fcache, arcname=frel.as_posix())
+
+    if (fcache.exists()
+        and fcache.is_file()
+        and fcache.relative_to(cache_root)
+    ):
+        fcache.unlink(missing_ok=True)
+
+    return (shard, frel)
 
 
                                 # pylint: disable=too-many-positional-arguments
@@ -568,6 +725,8 @@ def save_file_as(                          # pylint: disable=too-many-arguments
     vault_uuid: str | UUID,
     files_root: Path,
     shards_root: Path,
+    cache_root: Path,
+    loose_shard_size: bool,
     argon_memory_kib: int = Constants.ARGON_MEMORY_KIB,
     argon_iterations: int = Constants.ARGON_ITERATIONS,
     argon_lanes: int = Constants.ARGON_LANES,
@@ -593,6 +752,8 @@ def save_file_as(                          # pylint: disable=too-many-arguments
         compress_algo=compress_algo,
         vault_uuid=vault_uuid,
         shards_root=shards_root,
+        cache_root=cache_root,
+        loose_shard_size=loose_shard_size,
         argon_memory_kib=argon_memory_kib,
         argon_iterations=argon_iterations,
         argon_lanes=argon_lanes,
