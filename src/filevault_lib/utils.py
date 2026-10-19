@@ -26,6 +26,13 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
 from filevault_lib.config import Constants
+from filevault_lib.types import (
+    KeyringRef,
+    CompressAlgo,
+    EncryptAlgo,
+    BytesStream,
+    DataInItem,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -35,54 +42,6 @@ _MAGIC = b"FVENC001"
 _HEADER_SIZE = 32
 _TAG_SIZE = 16
 _MAX_CHUNKS = 2**32 - 1
-
-
-class KeyringRef(str, Enum):
-    UNALLOTED = "U"
-    OBJECT = "O"
-    FILES = "F"
-    SHARDS = "S"
-    CACHE = "C"
-
-
-class CompressAlgo(str, Enum):
-    NONE = "none"
-    DEFLATE = "zlib"                                          # DEFLATE == GZIP
-    GZIP = "gzip"
-    BZIP2 = "bz2"
-    XZ = "xz"                                                      # XZ == LZMA
-    LZMA = "lzma"
-
-
-class EncryptAlgo(str, Enum):
-    NONE = "none"
-    AES_GCM = "aes-gcm"
-    CHACHA20_POLY1305 = "chacha20-poly1305"
-
-
-class BytesStream:                     # pylint: disable=too-few-public-methods
-    def __init__(self, data: Iterable[bytes]):
-        self._data: Iterator[bytes] = iter(data)
-        self._buffer = bytearray()
-        self._eof = False
-
-    def read(self, size: int = -1) -> bytes:
-        if size < 0:
-            self._buffer.extend(b"".join(self._data))
-            self._eof = True
-            result = bytes(self._buffer)
-            self._buffer.clear()
-            return result
-
-        while len(self._buffer) < size and not self._eof:
-            try:
-                self._buffer.extend(next(self._data))
-            except StopIteration:
-                self._eof = True
-
-        result = bytes(self._buffer[:size])
-        del self._buffer[:size]
-        return result
 
 
 def get_vault_uuid(
@@ -759,5 +718,71 @@ def save_file_as(                          # pylint: disable=too-many-arguments
         argon_lanes=argon_lanes,
         chunk=chunk
     )
+
+
+
+def get_plain_file(
+    floc: Path,
+    encrypt_algo: EncryptAlgo,
+    encrypt_key: SecretStr,
+    compress_algo: CompressAlgo,
+    files_root: Path,
+    shards_root: Path,
+    cache_root: Path,
+    argon_memory_kib: int = Constants.ARGON_MEMORY_KIB,
+    argon_iterations: int = Constants.ARGON_ITERATIONS,
+    argon_lanes: int = Constants.ARGON_LANES,
+    chunk: int = Constants.CHUNKS
+):
+    pass
+
+
+def get_shard_file(
+    floc: Path,
+    encrypt_algo: EncryptAlgo,
+    encrypt_key: SecretStr,
+    compress_algo: CompressAlgo,
+    files_root: Path,
+    shards_root: Path,
+    cache_root: Path,
+    argon_memory_kib: int = Constants.ARGON_MEMORY_KIB,
+    argon_iterations: int = Constants.ARGON_ITERATIONS,
+    argon_lanes: int = Constants.ARGON_LANES,
+    chunk: int = Constants.CHUNKS
+):
+    pass
+
+
+def rm_plain_file(
+    floc: Path,
+    encrypt_algo: EncryptAlgo,
+    encrypt_key: SecretStr,
+    compress_algo: CompressAlgo,
+    files_root: Path,
+    shards_root: Path,
+    cache_root: Path,
+    argon_memory_kib: int = Constants.ARGON_MEMORY_KIB,
+    argon_iterations: int = Constants.ARGON_ITERATIONS,
+    argon_lanes: int = Constants.ARGON_LANES,
+    chunk: int = Constants.CHUNKS
+):
+    pass
+
+
+def rm_shard_file(
+    floc: Path,
+    encrypt_algo: EncryptAlgo,
+    encrypt_key: SecretStr,
+    compress_algo: CompressAlgo,
+    files_root: Path,
+    shards_root: Path,
+    cache_root: Path,
+    argon_memory_kib: int = Constants.ARGON_MEMORY_KIB,
+    argon_iterations: int = Constants.ARGON_ITERATIONS,
+    argon_lanes: int = Constants.ARGON_LANES,
+    chunk: int = Constants.CHUNKS
+):
+    pass
+
 
 

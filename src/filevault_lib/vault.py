@@ -9,20 +9,31 @@ import shutil
 from pathlib import Path
 from uuid import UUID
 from datetime import datetime
+from collections.abc import Iterator
+from typing import TypeAlias
+from io import BytesIO
 
 from pydantic import SecretStr
 from cryptography.exceptions import InvalidTag
 
 from filevault_lib.config import (
+    Constants,
     ConfigManager,
     get_constants,
     load_config_for,
     save_config_to,
 )
-from filevault_lib.utils import (
-    get_vault_uuid,
+from filevault_lib.types import (
     CompressAlgo,
     EncryptAlgo,
+    DataInType,
+    DataOutType,
+    PasskeyType,
+    CompressAlgoType,
+    EncryptAlgoType,
+)
+from filevault_lib.utils import (
+    get_vault_uuid,
     compress,
     decompress,
     encrypt,
@@ -328,6 +339,109 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
     def put(
         self,
+        data: DataInType,
+        meta: dict | list[dict] = None.
+        encrypt_algo: EncryptAlgoType = EncryptAlgo.NONE,
+        encrypt_key: PasskeyType = None,
+        compress_algo: CompressAlgoType = CompressAlgo.NONE
+    ) -> str | list[str]:
+        if not self.is_open:
+            raise VaultNotOpenError("Vault is not open.")
+
+        if not data:
+            raise InputInconsitentException("Missing input data.")
+
+        if isinstance(data, str):
+            data = data.encode(self.get_config().get("ENCODING", "UTF-8"))
+
+        if not isinstance(data, list):
+            data = [data]
+
+        n_size = len(data)
+
+        if meta and isinstance(meta, list) and n_size != len(meta):
+            raise InputInconsitentException(
+                "Total number of meta provided in list mismatches data list."
+            )
+        else:
+            meta = [meta] * n_size
+
+        if (encrypt_algo and isinstance(encrypt_algo, list)
+            and n_size != len(encrypt_algo)
+        ):
+            raise InputInconsitentException(
+                "Total number of encrypt_algo provided in "
+                "list mismatches data list."
+            )
+        else:
+            encrypt_algo = [encrypt_algo] * n_size
+
+        if (encrypt_key and isinstance(encrypt_key, list)
+            and n_size != len(encrypt_key)
+        ):
+            raise InputInconsitentException(
+                "Total number of encrypt_key provided in "
+                "list mismatches data list."
+            )
+        else:
+            if encrypt_key and isinstance(encrypt_key, str):
+                encrypt_key = SecretStr(encrypt_key)
+
+            encrypt_key = [encrypt_key] * n_size
+
+        encrypt_key = [
+            SecretStr(_k) if isinstance(_k, str) else _k for _k in encrypt_key
+        ]
+
+        if (compress_algo and isinstance(compress_algo, list)
+            and n_size != len(compress_algo)
+        ):
+            raise InputInconsitentException(
+                "Total number of compress_algo provided in "
+                "list mismatches data list."
+            )
+        else:
+            compress_algo = [compress_algo] * n_size
+
+        o = []
+        s = []
+        f = []
+        for idx, _ds in enumerate(
+            zip(data, meta, encrypt_algo, encrypt_key, compress_algo)
+        ):
+            if isinstance(_ds[0], bytes):
+                o += [(idx, _ds)]
+            elif isinstance(_ds[0], Iterable):
+                s += [(idx, _ds)]
+            else:
+                f += [(idx, _ds)]
+        
+        keys = add_objects(o) + add_streams(s) + add_files(f)
+
+        keys.sort(key=lambda x: x[0])
+        keys = [j for _, j in keys]
+
+        return keys.pop(0) if len(keys) == 1 else keys
+
+
+    def get(
+        self,
+        key: str | list[str],
+        encrypt_algo: EncryptAlgoType = EncryptAlgo.NONE,
+        encrypt_key: PasskeyType = None,
+        compress_algo: CompressAlgoType = CompressAlgo.NONE
+    ) -> DataOutType:
+        if not self.is_open:
+            raise VaultNotOpenError("Vault is not open.")
+
+
+
+
+
+
+
+    def puts(
+        self,
         data: bytes | str,
         user_meta: dict = None,
         encrypt_algo: EncryptAlgo = EncryptAlgo.NONE,
@@ -373,7 +487,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
             )
 
 
-    def get(
+    def gets(
         self,
         key: str,
         decrypt_key: str | SecretStr = None

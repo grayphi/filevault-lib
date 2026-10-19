@@ -29,11 +29,17 @@ class Constants:                       # pylint: disable=too-few-public-methods
                                  #  final compressed + encrypted file to be
                                  #  exists before size caculation, so one write
                                  #  and one read time got added
+    BULK_OP = 1024               # no of items to process at a time, if list is
+                                 #  provided, as too much items can exceed sql
+                                 #  params list, so this should not be too
+                                 #  large. SQLite limit 32766 as max parameters
+                                 #  to add in single query
     CHUNKS = 2 * 1024 * 1024                     # 2 MB chunk to read at a time
     # Performance-oriented Argon2id settings.
     ARGON_MEMORY_KIB = 8 * 1024                                     # 8 MiB
     ARGON_ITERATIONS = 1
     ARGON_LANES = 1
+    ENCODING = "UTF-8"
 
 
 class ConfigManager:
