@@ -28,8 +28,10 @@ from sqlalchemy.sql import (
 
 from filevault_lib.sqla import Base
 from filevault_lib.utils import (
-    KeyringRef,
     generate_key,
+)
+from filevault_lib.types import (
+    KeyringRef,
     CompressAlgo,
     EncryptAlgo,
 )

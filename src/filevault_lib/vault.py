@@ -9,10 +9,10 @@ import shutil
 from pathlib import Path
 from uuid import UUID
 from datetime import datetime
-from collections.abc import Iterator
+from collections.abc import Iterator, Iterable
 from typing import TypeAlias
 from io import BytesIO
-from itertool import repeat
+from itertools import repeat
 
 from pydantic import SecretStr
 from cryptography.exceptions import InvalidTag
@@ -62,9 +62,6 @@ from filevault_lib.db import (
     get_status,
     set_status,
     get_stats,
-    add_object,
-    get_object,
-    del_object,
     get_objects,
     add_objects,
     del_objects,
@@ -341,7 +338,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
     def put(
         self,
         data: DataInType,
-        meta: dict | list[dict] = None.
+        meta: dict | list[dict] = None,
         encrypt_algo: EncryptAlgoType = EncryptAlgo.NONE,
         encrypt_key: PasskeyType = None,
         compress_algo: CompressAlgoType = CompressAlgo.NONE
@@ -360,20 +357,21 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
         n_size = len(data)
 
-        if meta and isinstance(meta, list) and n_size != len(meta):
-            raise InputInconsitentException(
-                "Total number of meta provided in list mismatches data list."
-            )
+        if meta and isinstance(meta, list):
+            if n_size != len(meta):
+                raise InputInconsitentException(
+                    "Total number of meta provided in list "
+                    "mismatches data list."
+                )
         else:
             meta = repeat(meta)
 
-        if (encrypt_algo and isinstance(encrypt_algo, list)
-            and n_size != len(encrypt_algo)
-        ):
-            raise InputInconsitentException(
-                "Total number of encrypt_algo provided in "
-                "list mismatches data list."
-            )
+        if encrypt_algo and isinstance(encrypt_algo, list):
+            if n_size != len(encrypt_algo):
+                raise InputInconsitentException(
+                    "Total number of encrypt_algo provided in "
+                    "list mismatches data list."
+                )
         else:
             encrypt_algo = repeat(encrypt_algo)
 
@@ -394,13 +392,12 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
             encrypt_key = repeat(encrypt_key)
 
-        if (compress_algo and isinstance(compress_algo, list)
-            and n_size != len(compress_algo)
-        ):
-            raise InputInconsitentException(
-                "Total number of compress_algo provided in "
-                "list mismatches data list."
-            )
+        if compress_algo and isinstance(compress_algo, list):
+            if n_size != len(compress_algo):
+                raise InputInconsitentException(
+                    "Total number of compress_algo provided in "
+                    "list mismatches data list."
+                )
         else:
             compress_algo = repeat(compress_algo)
 
@@ -523,110 +520,110 @@ class Vault:                          # pylint: disable=too-many-public-methods
 #            )
 
 
-    def gets(
-        self,
-        key: str,
-        decrypt_key: str | SecretStr = None
-    ) -> (bytes, dict):
-        if not self.is_open:
-            raise VaultNotOpenError("Vault is not open.")
-
-        decrypt_key = (SecretStr(decrypt_key) if isinstance(decrypt_key, str)
-            else decrypt_key)
-
-        with get_session_from(self._session_local) as session:
-            data, meta = get_object(
-                session=session,
-                key=key
-            )
-        try:
-            data=decrypt(
-                data = decompress(
-                    data=data,
-                    algo=meta.pop("compress_algo"),
-                    stream=False,
-                    chunk=self.get_config().get("CHUNKS")
-                ),
-                algo=meta.pop("encrypt_algo"),
-                secret=decrypt_key,
-                stream=False,
-                chunk=self.get_config().get("CHUNKS"),
-                **meta.pop("enc_params")
-            ) if data else None
-        except InvalidTag as exc:
-            raise VaultDecryptionError(
-                "Decryption failed: incorrect password or corrupted data."
-            ) from exc
-        return (data, meta)
-
-
-    def rm(
-        self,
-        key: str
-    ):
-        if not self.is_open:
-            raise VaultNotOpenError("Vault is not open.")
-
-        with get_session_from(self._session_local) as session:
-            del_object(session=session, key=key)
+#    def gets(
+#        self,
+#        key: str,
+#        decrypt_key: str | SecretStr = None
+#    ) -> (bytes, dict):
+#        if not self.is_open:
+#            raise VaultNotOpenError("Vault is not open.")
+#
+#        decrypt_key = (SecretStr(decrypt_key) if isinstance(decrypt_key, str)
+#            else decrypt_key)
+#
+#        with get_session_from(self._session_local) as session:
+#            data, meta = get_object(
+#                session=session,
+#                key=key
+#            )
+#        try:
+#            data=decrypt(
+#                data = decompress(
+#                    data=data,
+#                    algo=meta.pop("compress_algo"),
+#                    stream=False,
+#                    chunk=self.get_config().get("CHUNKS")
+#                ),
+#                algo=meta.pop("encrypt_algo"),
+#                secret=decrypt_key,
+#                stream=False,
+#                chunk=self.get_config().get("CHUNKS"),
+#                **meta.pop("enc_params")
+#            ) if data else None
+#        except InvalidTag as exc:
+#            raise VaultDecryptionError(
+#                "Decryption failed: incorrect password or corrupted data."
+#            ) from exc
+#        return (data, meta)
+#
+#
+#    def rm(
+#        self,
+#        key: str
+#    ):
+#        if not self.is_open:
+#            raise VaultNotOpenError("Vault is not open.")
+#
+#        with get_session_from(self._session_local) as session:
+#            del_object(session=session, key=key)
 
 
     # sqlite limit 32766 as max parameters to add in single query, so keys
     #  list should be less than that, create chunks of keys list and fetch
     #  in chunk, if more than that.
-    def mget(
-        self,
-        keys: list[str],
-        decrypt_keys: str | SecretStr | list[str | SecretStr] = None
-    ) -> list[(str, bytes, dict)]:
-        if not self.is_open:
-            raise VaultNotOpenError("Vault is not open.")
-
-        if decrypt_keys and isinstance(decrypt_keys, list):
-            if len(decrypt_keys) != len(keys):
-                logger.exception(
-                    "Number of encrypt keys must match total "
-                    "number of input keys."
-                )
-                raise InputInconsitentException(
-                    "Number of encrypt keys must match total "
-                    "number of input keys."
-                )
-        else:
-            decrypt_keys = [decrypt_keys] * len(keys)
-
-        decrypt_keys = [
-            SecretStr(k) if isinstance(k, str) else k for k in decrypt_keys
-        ]
-
-        with get_session_from(self._session_local) as session:
-            objs = get_objects(
-                session=session,
-                keys=keys
-            )
-        objs = [(*o, k) for o, k in zip(objs, decrypt_keys)]
-        try:
-            objs = [(key,
-                decrypt(
-                    data=decompress(
-                        data=data,
-                        algo=meta.pop("compress_algo"),
-                        stream=False,
-                        chunk=self.get_config().get("CHUNKS")
-                    ),
-                    algo=meta.pop("encrypt_algo"),
-                    secret=decrypt_key,
-                    stream=False,
-                    chunk=self.get_config().get("CHUNKS"),
-                    **meta.pop("enc_params")
-                ), meta) for key, data, meta, decrypt_key in objs
-            ]
-        except InvalidTag as exc:
-            raise VaultDecryptionError(
-                "Decryption failed for some objects: "
-                "incorrect password or corrupted data."
-            ) from exc
-        return objs
+#    def mget(
+#        self,
+#        keys: list[str],
+#        decrypt_keys: str | SecretStr | list[str | SecretStr] = None
+#    ) -> list[(str, bytes, dict)]:
+#        if not self.is_open:
+#            raise VaultNotOpenError("Vault is not open.")
+#
+#        if decrypt_keys and isinstance(decrypt_keys, list):
+#            if len(decrypt_keys) != len(keys):
+#                logger.exception(
+#                    "Number of encrypt keys must match total "
+#                    "number of input keys."
+#                )
+#                raise InputInconsitentException(
+#                    "Number of encrypt keys must match total "
+#                    "number of input keys."
+#                )
+#        else:
+#            decrypt_keys = [decrypt_keys] * len(keys)
+#
+#        decrypt_keys = [
+#            SecretStr(k) if isinstance(k, str) else k for k in decrypt_keys
+#        ]
+#
+#        with get_session_from(self._session_local) as session:
+#            objs = get_objects(
+#                session=session,
+#                keys=keys
+#            )
+#        objs = [(*o, k) for o, k in zip(objs, decrypt_keys)]
+#        try:
+#            objs = [(key,
+#                decrypt(
+#                    data=decompress(
+#                        data=data,
+#                        algo=meta.pop("compress_algo"),
+#                        stream=False,
+#                        chunk=self.get_config().get("CHUNKS")
+#                    ),
+#                    algo=meta.pop("encrypt_algo"),
+#                    secret=decrypt_key,
+#                    stream=False,
+#                    chunk=self.get_config().get("CHUNKS"),
+#                    **meta.pop("enc_params")
+#                ), meta) for key, data, meta, decrypt_key in objs
+#            ]
+#        except InvalidTag as exc:
+#            raise VaultDecryptionError(
+#                "Decryption failed for some objects: "
+#                "incorrect password or corrupted data."
+#            ) from exc
+#        return objs
 
 #                                           # pylint: disable=too-many-arguments
 #                                # pylint: disable=too-many-positional-arguments
@@ -745,15 +742,15 @@ class Vault:                          # pylint: disable=too-many-public-methods
 #            )
 
 
-    def mrm(
-        self,
-        keys: list[str]
-    ):
-        if not self.is_open:
-            raise VaultNotOpenError("Vault is not open.")
-
-        with get_session_from(self._session_local) as session:
-            del_objects(session=session, keys=keys)
+#    def mrm(
+#        self,
+#        keys: list[str]
+#    ):
+#        if not self.is_open:
+#            raise VaultNotOpenError("Vault is not open.")
+#
+#        with get_session_from(self._session_local) as session:
+#            del_objects(session=session, keys=keys)
 
 
     def putf(

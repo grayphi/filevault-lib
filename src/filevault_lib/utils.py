@@ -7,7 +7,6 @@ import os
 import logging
 from uuid import UUID, uuid5
 from pathlib import Path
-from enum import Enum
 from collections.abc import Iterable, Iterator
 import secrets
 import string
@@ -27,11 +26,9 @@ from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
 from filevault_lib.config import Constants
 from filevault_lib.types import (
-    KeyringRef,
     CompressAlgo,
     EncryptAlgo,
     BytesStream,
-    DataInItem,
 )
 
 
