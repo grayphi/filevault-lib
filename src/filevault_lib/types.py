@@ -68,7 +68,7 @@ DataInType: TypeAlias = DataInItem | list[DataInItem]
 DataOutItem: TypeAlias = (str, Iterable[bytes], dict)
 DataOutType: TypeAlias = DataOutItem | list[DataOutItem]
 
-PasskeyItem: TypeAlias = str | SecretStr
+PasskeyItem: TypeAlias = str | bytes | SecretStr
 PasskeyType: TypeAlias = PasskeyItem | list[PasskeyType]
 
 CompressAlgoType: TypeAlias = CompressAlgo | list[CompressAlgo]

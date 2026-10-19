@@ -12,6 +12,7 @@ from datetime import datetime
 from collections.abc import Iterator
 from typing import TypeAlias
 from io import BytesIO
+from itertool import repeat
 
 from pydantic import SecretStr
 from cryptography.exceptions import InvalidTag
@@ -364,7 +365,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 "Total number of meta provided in list mismatches data list."
             )
         else:
-            meta = [meta] * n_size
+            meta = repeat(meta)
 
         if (encrypt_algo and isinstance(encrypt_algo, list)
             and n_size != len(encrypt_algo)
@@ -374,24 +375,24 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 "list mismatches data list."
             )
         else:
-            encrypt_algo = [encrypt_algo] * n_size
+            encrypt_algo = repeat(encrypt_algo)
 
-        if (encrypt_key and isinstance(encrypt_key, list)
-            and n_size != len(encrypt_key)
-        ):
-            raise InputInconsitentException(
-                "Total number of encrypt_key provided in "
-                "list mismatches data list."
-            )
+        if encrypt_key and isinstance(encrypt_key, list):
+            if n_size != len(encrypt_key):
+                raise InputInconsitentException(
+                    "Total number of encrypt_key provided in "
+                    "list mismatches data list."
+                )
+
+            encrypt_key = [
+                SecretStr(_k) if isinstance(_k, (str, bytes)) else _k
+                    for _k in encrypt_key
+            ]
         else:
-            if encrypt_key and isinstance(encrypt_key, str):
+            if encrypt_key and isinstance(encrypt_key, (str, bytes)):
                 encrypt_key = SecretStr(encrypt_key)
 
-            encrypt_key = [encrypt_key] * n_size
-
-        encrypt_key = [
-            SecretStr(_k) if isinstance(_k, str) else _k for _k in encrypt_key
-        ]
+            encrypt_key = repeat(encrypt_key)
 
         if (compress_algo and isinstance(compress_algo, list)
             and n_size != len(compress_algo)
@@ -401,7 +402,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 "list mismatches data list."
             )
         else:
-            compress_algo = [compress_algo] * n_size
+            compress_algo = repeat(compress_algo)
 
         o = []
         s = []
@@ -415,8 +416,43 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 s += [(idx, _ds)]
             else:
                 f += [(idx, _ds)]
-        
-        keys = add_objects(o) + add_streams(s) + add_files(f)
+        _o = []
+        ep = {
+            "argon_memory_kib": self.get_config().get("ARGON_MEMORY_KIB"),
+            "argon_iterations": self.get_config().get("ARGON_ITERATIONS"),
+            "argon_lanes": self.get_config().get("ARGON_LANES"),
+        }
+        while o:
+            idx, (d, m, ea, ek, ca) = o.pop(0)
+            s = len(d)
+            d = compress(
+                data=encrypt(
+                    data=d,
+                    algo=ea,
+                    secret=ek,
+                    stream=True,
+                    chunk=self.get_config().get("CHUNKS"),
+                    **ep
+                ),
+                algo=ca,
+                stream=False,
+                chunk=self.get_config().get("CHUNKS")
+            )
+            _o += [(idx, (d, s, m, ea, ca))]
+
+        with get_session_from(self._session_local) as session:
+            keys = (
+                add_objects(
+                    session,
+                    data=_o,
+                    enc_params=ep,
+                    bulk_op=self.get_config().get("BULK_OP")
+                #) + add_streams(
+                 #   session,
+                #) + add_files(
+                 #   session,
+                )
+            )
 
         keys.sort(key=lambda x: x[0])
         keys = [j for _, j in keys]
@@ -440,51 +476,51 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
 
 
-    def puts(
-        self,
-        data: bytes | str,
-        user_meta: dict = None,
-        encrypt_algo: EncryptAlgo = EncryptAlgo.NONE,
-        encrypt_key: str | SecretStr = None,
-        compress_algo: CompressAlgo = CompressAlgo.NONE
-    ) -> str:
-        if not self.is_open:
-            raise VaultNotOpenError("Vault is not open.")
-
-        if isinstance(data, str):
-            data = data.encode("utf-8")
-
-        encrypt_key = (SecretStr(encrypt_key) if isinstance(encrypt_key, str)
-            else encrypt_key)
-
-        enc_params = {
-            "argon_memory_kib": self.get_config().get("ARGON_MEMORY_KIB"),
-            "argon_iterations": self.get_config().get("ARGON_ITERATIONS"),
-            "argon_lanes": self.get_config().get("ARGON_LANES"),
-        }
-
-        with get_session_from(self._session_local) as session:
-            return add_object(
-                session=session,
-                data=compress(
-                    data=encrypt(
-                        data=data,
-                        algo=encrypt_algo,
-                        secret=encrypt_key,
-                        stream=False,
-                        chunk=self.get_config().get("CHUNKS"),
-                        **enc_params
-                    ),
-                    algo=compress_algo,
-                    stream=False,
-                    chunk=self.get_config().get("CHUNKS")
-                ),
-                size=len(data),
-                user_meta=user_meta,
-                encrypt_algo=encrypt_algo,
-                compress_algo=compress_algo,
-                enc_params=enc_params
-            )
+#    def puts(
+#        self,
+#        data: bytes | str,
+#        user_meta: dict = None,
+#        encrypt_algo: EncryptAlgo = EncryptAlgo.NONE,
+#        encrypt_key: str | SecretStr = None,
+#        compress_algo: CompressAlgo = CompressAlgo.NONE
+#    ) -> str:
+#        if not self.is_open:
+#            raise VaultNotOpenError("Vault is not open.")
+#
+#        if isinstance(data, str):
+#            data = data.encode("utf-8")
+#
+#        encrypt_key = (SecretStr(encrypt_key) if isinstance(encrypt_key, str)
+#            else encrypt_key)
+#
+#        enc_params = {
+#            "argon_memory_kib": self.get_config().get("ARGON_MEMORY_KIB"),
+#            "argon_iterations": self.get_config().get("ARGON_ITERATIONS"),
+#            "argon_lanes": self.get_config().get("ARGON_LANES"),
+#        }
+#
+#        with get_session_from(self._session_local) as session:
+#            return add_object(
+#                session=session,
+#                data=compress(
+#                    data=encrypt(
+#                        data=data,
+#                        algo=encrypt_algo,
+#                        secret=encrypt_key,
+#                        stream=False,
+#                        chunk=self.get_config().get("CHUNKS"),
+#                        **enc_params
+#                    ),
+#                    algo=compress_algo,
+#                    stream=False,
+#                    chunk=self.get_config().get("CHUNKS")
+#                ),
+#                size=len(data),
+#                user_meta=user_meta,
+#                encrypt_algo=encrypt_algo,
+#                compress_algo=compress_algo,
+#                enc_params=enc_params
+#            )
 
 
     def gets(
@@ -592,121 +628,121 @@ class Vault:                          # pylint: disable=too-many-public-methods
             ) from exc
         return objs
 
-                                           # pylint: disable=too-many-arguments
-                                # pylint: disable=too-many-positional-arguments
-                                            # pylint: disable=too-many-branches
-    def mput(
-        self,
-        datas: list[bytes | str],
-        user_metas: dict | list[dict] = None,
-        encrypt_algos: EncryptAlgo | list[EncryptAlgo] = None,
-        encrypt_keys: str | SecretStr | list[str | SecretStr] = None,
-        compress_algos: CompressAlgo | list[CompressAlgo] = None,
-        chunk_size: int = 512
-    ) -> list[str]:
-        if not self.is_open:
-            raise VaultNotOpenError("Vault is not open.")
-
-        datas = [
-            d.encode("utf-8") if isinstance(d, str) else d
-            for d in datas
-        ]
-        l = len(datas)
-
-        if user_metas and isinstance(user_metas, list):
-            if l != len(user_metas):
-                logger.exception(
-                    "user_metas should be of same length as of data."
-                )
-                raise InputInconsitentException(
-                    "user_metas should be of same length as of data."
-                )
-        else:
-            user_metas = [user_metas] * l
-
-        if encrypt_algos and isinstance(encrypt_algos, list):
-            if l != len(encrypt_algos):
-                logger.exception(
-                    "encrypt_algos should be of same length as of data."
-                )
-                raise InputInconsitentException(
-                    "encrypt_algos should be of same length as of data."
-                )
-        else:
-            encrypt_algos = [
-                encrypt_algos if isinstance(encrypt_algos, EncryptAlgo)
-                else EncryptAlgo(str(encrypt_algos).lower())
-            ] * l
-
-        if encrypt_keys and isinstance(encrypt_keys, list):
-            if l != len(encrypt_keys):
-                logger.exception(
-                    "encrypt_keys should be of same length as of data."
-                )
-                raise InputInconsitentException(
-                    "encrypt_keys should be of same length as of data."
-                )
-        else:
-            encrypt_keys = [encrypt_keys] * l
-
-        encrypt_keys = [
-            SecretStr(k) if isinstance(k, str) else k for k in encrypt_keys
-        ]
-
-        if compress_algos and isinstance(compress_algos, list):
-            if l != len(compress_algos):
-                logger.exception(
-                    "compress_algos should be of same length as of data."
-                )
-                raise InputInconsitentException(
-                    "compress_algos should be of same length as of data."
-                )
-        else:
-            compress_algos = [
-                compress_algos if isinstance(
-                    compress_algos, CompressAlgo
-                ) else CompressAlgo(str(compress_algos).lower())
-            ] * l
-
-        enc_params = {
-            "argon_memory_kib": self.get_config().get("ARGON_MEMORY_KIB"),
-            "argon_iterations": self.get_config().get("ARGON_ITERATIONS"),
-            "argon_lanes": self.get_config().get("ARGON_LANES"),
-        }
-
-        datas = [
-            (compress(
-                data=encrypt(
-                    data=d,
-                    algo=ea,
-                    secret=ek,
-                    stream=False,
-                    chunk=self.get_config().get("CHUNKS"),
-                    **enc_params
-                ),
-                algo=ca,
-                stream=False,
-                chunk=self.get_config().get("CHUNKS")
-            ), len(d)) for d, ea, ek, ca in zip(
-                datas,
-                encrypt_algos,
-                encrypt_keys,
-                compress_algos
-            )
-        ]
-
-        datas, sizes = map(list, zip(*datas))
-        with get_session_from(self._session_local) as session:
-            return add_objects(
-                session=session,
-                datas=datas,
-                sizes=sizes,
-                user_metas=user_metas,
-                encrypt_algos=encrypt_algos,
-                compress_algos=compress_algos,
-                chunk_size=chunk_size,
-                enc_params=enc_params
-            )
+#                                           # pylint: disable=too-many-arguments
+#                                # pylint: disable=too-many-positional-arguments
+#                                            # pylint: disable=too-many-branches
+#    def mput(
+#        self,
+#        datas: list[bytes | str],
+#        user_metas: dict | list[dict] = None,
+#        encrypt_algos: EncryptAlgo | list[EncryptAlgo] = None,
+#        encrypt_keys: str | SecretStr | list[str | SecretStr] = None,
+#        compress_algos: CompressAlgo | list[CompressAlgo] = None,
+#        chunk_size: int = 512
+#    ) -> list[str]:
+#        if not self.is_open:
+#            raise VaultNotOpenError("Vault is not open.")
+#
+#        datas = [
+#            d.encode("utf-8") if isinstance(d, str) else d
+#            for d in datas
+#        ]
+#        l = len(datas)
+#
+#        if user_metas and isinstance(user_metas, list):
+#            if l != len(user_metas):
+#                logger.exception(
+#                    "user_metas should be of same length as of data."
+#                )
+#                raise InputInconsitentException(
+#                    "user_metas should be of same length as of data."
+#                )
+#        else:
+#            user_metas = [user_metas] * l
+#
+#        if encrypt_algos and isinstance(encrypt_algos, list):
+#            if l != len(encrypt_algos):
+#                logger.exception(
+#                    "encrypt_algos should be of same length as of data."
+#                )
+#                raise InputInconsitentException(
+#                    "encrypt_algos should be of same length as of data."
+#                )
+#        else:
+#            encrypt_algos = [
+#                encrypt_algos if isinstance(encrypt_algos, EncryptAlgo)
+#                else EncryptAlgo(str(encrypt_algos).lower())
+#            ] * l
+#
+#        if encrypt_keys and isinstance(encrypt_keys, list):
+#            if l != len(encrypt_keys):
+#                logger.exception(
+#                    "encrypt_keys should be of same length as of data."
+#                )
+#                raise InputInconsitentException(
+#                    "encrypt_keys should be of same length as of data."
+#                )
+#        else:
+#            encrypt_keys = [encrypt_keys] * l
+#
+#        encrypt_keys = [
+#            SecretStr(k) if isinstance(k, str) else k for k in encrypt_keys
+#        ]
+#
+#        if compress_algos and isinstance(compress_algos, list):
+#            if l != len(compress_algos):
+#                logger.exception(
+#                    "compress_algos should be of same length as of data."
+#                )
+#                raise InputInconsitentException(
+#                    "compress_algos should be of same length as of data."
+#                )
+#        else:
+#            compress_algos = [
+#                compress_algos if isinstance(
+#                    compress_algos, CompressAlgo
+#                ) else CompressAlgo(str(compress_algos).lower())
+#            ] * l
+#
+#        enc_params = {
+#            "argon_memory_kib": self.get_config().get("ARGON_MEMORY_KIB"),
+#            "argon_iterations": self.get_config().get("ARGON_ITERATIONS"),
+#            "argon_lanes": self.get_config().get("ARGON_LANES"),
+#        }
+#
+#        datas = [
+#            (compress(
+#                data=encrypt(
+#                    data=d,
+#                    algo=ea,
+#                    secret=ek,
+#                    stream=False,
+#                    chunk=self.get_config().get("CHUNKS"),
+#                    **enc_params
+#                ),
+#                algo=ca,
+#                stream=False,
+#                chunk=self.get_config().get("CHUNKS")
+#            ), len(d)) for d, ea, ek, ca in zip(
+#                datas,
+#                encrypt_algos,
+#                encrypt_keys,
+#                compress_algos
+#            )
+#        ]
+#
+#        datas, sizes = map(list, zip(*datas))
+#        with get_session_from(self._session_local) as session:
+#            return add_objects(
+#                session=session,
+#                datas=datas,
+#                sizes=sizes,
+#                user_metas=user_metas,
+#                encrypt_algos=encrypt_algos,
+#                compress_algos=compress_algos,
+#                chunk_size=chunk_size,
+#                enc_params=enc_params
+#            )
 
 
     def mrm(

@@ -11,7 +11,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-
 from sqlalchemy import (
     select,
     update,
@@ -33,7 +32,7 @@ from filevault_lib.orm import (
     ShardsTable,
     CacheTable,
 )
-from filevault_lib.utils import (
+from filevault_lib.types import (
     KeyringRef,
     CompressAlgo,
     EncryptAlgo,
@@ -163,112 +162,112 @@ def get_stats(session: Session) -> dict:
         ) from e
 
 
-            # pylint: disable=too-many-arguments, too-many-positional-arguments
-@transactional
-def add_object(
-    session: Session,
-    data: bytes,
-    size: int,
-    user_meta: dict,
-    encrypt_algo: EncryptAlgo,
-    compress_algo: CompressAlgo,
-    enc_params: dict
-) -> str:
-    while True:
-        k = KeyringTable(fwd_ref=KeyringRef.OBJECT)
-
-        try:
-            with session.begin_nested():
-                session.add(k)
-                session.flush()
-            break
-        except IntegrityError:
-            logger.debug("key collide, trying new")
-            continue
-
-    o = ObjectsTable(
-        key=k.key,
-        data=data,
-        file_size=size,
-        disk_size=len(data),
-        encrypt_algo=encrypt_algo,
-        compress_algo=compress_algo,
-        user_meta=user_meta,
-        enc_params=enc_params
-    )
-
-    session.add(o)
-    session.flush()
-
-    return k.key
-
-
-@transactional
-def get_object(
-    session: Session,
-    key: str
-) -> (bytes, dict):
-    stmt = select(
-        ObjectsTable
-    ).where(
-        ObjectsTable.key == key
-    )
-
-    try:
-        obj = session.execute(stmt).scalar_one_or_none()
-    except Exception as e:
-        logger.exception(e)
-        raise DBException(
-            "Something unexpected happened, while fetching Object."
-        ) from e
-
-    return (
-        obj.data,
-        {
-            "file_size": obj.file_size,
-            "disk_size": obj.disk_size,
-            "user_meta": obj.user_meta,
-            "encrypt_algo": obj.encrypt_algo,
-            "compress_algo": obj.compress_algo,
-            "created_on": obj.created_on,
-            "modified_on": obj.modified_on,
-            "enc_params": obj.enc_params
-
-        }
-    ) if obj else (None, None)
-
-
-@transactional
-def del_object(
-    session: Session,
-    key: str
-):
-    stmt_1 = delete(
-        ObjectsTable
-    ).where(
-        ObjectsTable.key == key
-    )
-
-    stmt_2 = delete(
-        KeyringTable
-    ).where(
-        KeyringTable.key == key
-    )
-
-    try:
-        session.execute(stmt_1)
-        session.execute(stmt_2)
-        session.flush()
-    except IntegrityError as e:
-        logger.exception(e)
-        raise DBException(
-            "Can't delete data, integrity check failed."
-        ) from e
-    except Exception as e:
-        logger.exception(e)
-        raise DBException(
-            "Something unexpected happened, while deleting data."
-        ) from e
+#            # pylint: disable=too-many-arguments, too-many-positional-arguments
+#@transactional
+#def add_object(
+#    session: Session,
+#    data: bytes,
+#    size: int,
+#    user_meta: dict,
+#    encrypt_algo: EncryptAlgo,
+#    compress_algo: CompressAlgo,
+#    enc_params: dict
+#) -> str:
+#    while True:
+#        k = KeyringTable(fwd_ref=KeyringRef.OBJECT)
+#
+#        try:
+#            with session.begin_nested():
+#                session.add(k)
+#                session.flush()
+#            break
+#        except IntegrityError:
+#            logger.debug("key collide, trying new")
+#            continue
+#
+#    o = ObjectsTable(
+#        key=k.key,
+#        data=data,
+#        file_size=size,
+#        disk_size=len(data),
+#        encrypt_algo=encrypt_algo,
+#        compress_algo=compress_algo,
+#        user_meta=user_meta,
+#        enc_params=enc_params
+#    )
+#
+#    session.add(o)
+#    session.flush()
+#
+#    return k.key
+#
+#
+#@transactional
+#def get_object(
+#    session: Session,
+#    key: str
+#) -> (bytes, dict):
+#    stmt = select(
+#        ObjectsTable
+#    ).where(
+#        ObjectsTable.key == key
+#    )
+#
+#    try:
+#        obj = session.execute(stmt).scalar_one_or_none()
+#    except Exception as e:
+#        logger.exception(e)
+#        raise DBException(
+#            "Something unexpected happened, while fetching Object."
+#        ) from e
+#
+#    return (
+#        obj.data,
+#        {
+#            "file_size": obj.file_size,
+#            "disk_size": obj.disk_size,
+#            "user_meta": obj.user_meta,
+#            "encrypt_algo": obj.encrypt_algo,
+#            "compress_algo": obj.compress_algo,
+#            "created_on": obj.created_on,
+#            "modified_on": obj.modified_on,
+#            "enc_params": obj.enc_params
+#
+#        }
+#    ) if obj else (None, None)
+#
+#
+#@transactional
+#def del_object(
+#    session: Session,
+#    key: str
+#):
+#    stmt_1 = delete(
+#        ObjectsTable
+#    ).where(
+#        ObjectsTable.key == key
+#    )
+#
+#    stmt_2 = delete(
+#        KeyringTable
+#    ).where(
+#        KeyringTable.key == key
+#    )
+#
+#    try:
+#        session.execute(stmt_1)
+#        session.execute(stmt_2)
+#        session.flush()
+#    except IntegrityError as e:
+#        logger.exception(e)
+#        raise DBException(
+#            "Can't delete data, integrity check failed."
+#        ) from e
+#    except Exception as e:
+#        logger.exception(e)
+#        raise DBException(
+#            "Something unexpected happened, while deleting data."
+#        ) from e
 
 
 @transactional
@@ -305,28 +304,84 @@ def get_objects(
         }
     ) for obj in objs]
 
-                                           # pylint: disable=too-many-arguments
-                                # pylint: disable=too-many-positional-arguments
-                                              # pylint: disable=too-many-locals
+#                                           # pylint: disable=too-many-arguments
+#                                # pylint: disable=too-many-positional-arguments
+#                                              # pylint: disable=too-many-locals
+#@transactional
+#def add_objects(
+#    session: Session,
+#    datas: list[bytes],
+#    sizes: list[int],
+#    user_metas: list[dict],
+#    encrypt_algos: list[EncryptAlgo],
+#    compress_algos: list[CompressAlgo],
+#    enc_params: dict,
+#    chunk_size: int = 512
+#) -> list[str]:
+#    keys = []
+#
+#    needed = len(datas)
+#    for _ in range(ceil(needed / chunk_size)):
+#        while True:
+#            keyrings = [
+#                KeyringTable(fwd_ref=KeyringRef.OBJECT) for _ in range(
+#                    min(chunk_size, needed)
+#                )
+#            ]
+#
+#            try:
+#                with session.begin_nested():
+#                    session.add_all(keyrings)
+#                    session.flush()
+#                break
+#            except IntegrityError:
+#                logger.debug("key collide, trying new")
+#                continue
+#
+#        objs = []
+#        for _ in range(min(chunk_size, needed)):
+#            k = keyrings.pop(0)
+#            data = datas.pop(0)
+#            size = sizes.pop(0)
+#            user_meta = user_metas.pop(0)
+#            encrypt_algo = encrypt_algos.pop(0)
+#            compress_algo = compress_algos.pop(0)
+#
+#            objs += [ObjectsTable(
+#                key=k.key,
+#                data=data,
+#                file_size=size,
+#                disk_size=len(data),
+#                encrypt_algo=encrypt_algo,
+#                compress_algo=compress_algo,
+#                user_meta=user_meta,
+#                enc_params=enc_params
+#            )]
+#            keys += [k.key]
+#
+#        session.add_all(objs)
+#        session.flush()
+#
+#        needed = needed - chunk_size
+#
+#    return keys
+
+
 @transactional
 def add_objects(
     session: Session,
-    datas: list[bytes],
-    sizes: list[int],
-    user_metas: list[dict],
-    encrypt_algos: list[EncryptAlgo],
-    compress_algos: list[CompressAlgo],
+    data: list[(int, (bytes, int, dict, EncryptAlgo, CompressAlgo))],
     enc_params: dict,
-    chunk_size: int = 512
-) -> list[str]:
+    bulk_op: int
+) -> list[(int, str)]:
     keys = []
+    needed = len(data)
 
-    needed = len(datas)
-    for _ in range(ceil(needed / chunk_size)):
+    for _ in range(ceil(needed / bulk_op)):
         while True:
             keyrings = [
                 KeyringTable(fwd_ref=KeyringRef.OBJECT) for _ in range(
-                    min(chunk_size, needed)
+                    min(bulk_op, needed)
                 )
             ]
 
@@ -340,30 +395,26 @@ def add_objects(
                 continue
 
         objs = []
-        for _ in range(min(chunk_size, needed)):
+        for _ in range(min(bulk_op, needed)):
             k = keyrings.pop(0)
-            data = datas.pop(0)
-            size = sizes.pop(0)
-            user_meta = user_metas.pop(0)
-            encrypt_algo = encrypt_algos.pop(0)
-            compress_algo = compress_algos.pop(0)
+            idx, (d, s, m, ea, ca) = data.pop(0)
 
             objs += [ObjectsTable(
                 key=k.key,
-                data=data,
-                file_size=size,
-                disk_size=len(data),
-                encrypt_algo=encrypt_algo,
-                compress_algo=compress_algo,
-                user_meta=user_meta,
+                data=d,
+                file_size=s,
+                disk_size=len(d),
+                encrypt_algo=ea,
+                compress_algo=ca,
+                user_meta=m,
                 enc_params=enc_params
             )]
-            keys += [k.key]
+            keys += [(idx, k.key)]
 
         session.add_all(objs)
         session.flush()
 
-        needed = needed - chunk_size
+        needed = needed - bulk_op
 
     return keys
 
