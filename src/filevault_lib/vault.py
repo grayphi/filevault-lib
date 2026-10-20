@@ -540,43 +540,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
 
 
-#    def gets(
-#        self,
-#        key: str,
-#        decrypt_key: str | SecretStr = None
-#    ) -> (bytes, dict):
-#        if not self.is_open:
-#            raise VaultNotOpenError("Vault is not open.")
-#
-#        decrypt_key = (SecretStr(decrypt_key) if isinstance(decrypt_key, str)
-#            else decrypt_key)
-#
-#        with get_session_from(self._session_local) as session:
-#            data, meta = get_object(
-#                session=session,
-#                key=key
-#            )
-#        try:
-#            data=decrypt(
-#                data = decompress(
-#                    data=data,
-#                    algo=meta.pop("compress_algo"),
-#                    stream=False,
-#                    chunk=self.get_config().get("CHUNKS")
-#                ),
-#                algo=meta.pop("encrypt_algo"),
-#                secret=decrypt_key,
-#                stream=False,
-#                chunk=self.get_config().get("CHUNKS"),
-#                **meta.pop("enc_params")
-#            ) if data else None
-#        except InvalidTag as exc:
-#            raise VaultDecryptionError(
-#                "Decryption failed: incorrect password or corrupted data."
-#            ) from exc
-#        return (data, meta)
-#
-#
 #    def rm(
 #        self,
 #        key: str
@@ -586,64 +549,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
 #
 #        with get_session_from(self._session_local) as session:
 #            del_object(session=session, key=key)
-
-
-    # sqlite limit 32766 as max parameters to add in single query, so keys
-    #  list should be less than that, create chunks of keys list and fetch
-    #  in chunk, if more than that.
-#    def mget(
-#        self,
-#        keys: list[str],
-#        decrypt_keys: str | SecretStr | list[str | SecretStr] = None
-#    ) -> list[(str, bytes, dict)]:
-#        if not self.is_open:
-#            raise VaultNotOpenError("Vault is not open.")
-#
-#        if decrypt_keys and isinstance(decrypt_keys, list):
-#            if len(decrypt_keys) != len(keys):
-#                logger.exception(
-#                    "Number of encrypt keys must match total "
-#                    "number of input keys."
-#                )
-#                raise InputInconsitentException(
-#                    "Number of encrypt keys must match total "
-#                    "number of input keys."
-#                )
-#        else:
-#            decrypt_keys = [decrypt_keys] * len(keys)
-#
-#        decrypt_keys = [
-#            SecretStr(k) if isinstance(k, str) else k for k in decrypt_keys
-#        ]
-#
-#        with get_session_from(self._session_local) as session:
-#            objs = get_objects(
-#                session=session,
-#                keys=keys
-#            )
-#        objs = [(*o, k) for o, k in zip(objs, decrypt_keys)]
-#        try:
-#            objs = [(key,
-#                decrypt(
-#                    data=decompress(
-#                        data=data,
-#                        algo=meta.pop("compress_algo"),
-#                        stream=False,
-#                        chunk=self.get_config().get("CHUNKS")
-#                    ),
-#                    algo=meta.pop("encrypt_algo"),
-#                    secret=decrypt_key,
-#                    stream=False,
-#                    chunk=self.get_config().get("CHUNKS"),
-#                    **meta.pop("enc_params")
-#                ), meta) for key, data, meta, decrypt_key in objs
-#            ]
-#        except InvalidTag as exc:
-#            raise VaultDecryptionError(
-#                "Decryption failed for some objects: "
-#                "incorrect password or corrupted data."
-#            ) from exc
-#        return objs
 
 
 #    def mrm(

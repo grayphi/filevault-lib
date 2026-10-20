@@ -164,41 +164,6 @@ def get_stats(session: Session) -> dict:
 
 
 #@transactional
-#def get_object(
-#    session: Session,
-#    key: str
-#) -> (bytes, dict):
-#    stmt = select(
-#        ObjectsTable
-#    ).where(
-#        ObjectsTable.key == key
-#    )
-#
-#    try:
-#        obj = session.execute(stmt).scalar_one_or_none()
-#    except Exception as e:
-#        logger.exception(e)
-#        raise DBException(
-#            "Something unexpected happened, while fetching Object."
-#        ) from e
-#
-#    return (
-#        obj.data,
-#        {
-#            "file_size": obj.file_size,
-#            "disk_size": obj.disk_size,
-#            "user_meta": obj.user_meta,
-#            "encrypt_algo": obj.encrypt_algo,
-#            "compress_algo": obj.compress_algo,
-#            "created_on": obj.created_on,
-#            "modified_on": obj.modified_on,
-#            "enc_params": obj.enc_params
-#
-#        }
-#    ) if obj else (None, None)
-#
-#
-#@transactional
 #def del_object(
 #    session: Session,
 #    key: str
@@ -229,41 +194,6 @@ def get_stats(session: Session) -> dict:
 #        raise DBException(
 #            "Something unexpected happened, while deleting data."
 #        ) from e
-
-
-#@transactional
-#def get_objects(
-#    session: Session,
-#    keys: list[str]
-#) -> list[(str, bytes, dict)]:
-#    stmt = select(
-#        ObjectsTable
-#    ).where(
-#        ObjectsTable.key.in_(keys)
-#    )
-#
-#    try:
-#        objs = session.execute(stmt).scalars().all()
-#    except Exception as e:
-#        logger.exception(e)
-#        raise DBException(
-#            "Something unexpected happened, while fetching Object(s)."
-#        ) from e
-#
-#    return [(
-#        obj.key,
-#        obj.data,
-#        {
-#            "file_size": obj.file_size,
-#            "disk_size": obj.disk_size,
-#            "user_meta": obj.user_meta,
-#            "encrypt_algo": obj.encrypt_algo,
-#            "compress_algo": obj.compress_algo,
-#            "created_on": obj.created_on,
-#            "modified_on": obj.modified_on,
-#            "enc_params": obj.enc_params
-#        }
-#    ) for obj in objs]
 
 
 @transactional
