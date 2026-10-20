@@ -10,6 +10,7 @@ from math import ceil
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
+from itertools import islice
 
 from sqlalchemy import (
     select,
@@ -162,46 +163,6 @@ def get_stats(session: Session) -> dict:
         ) from e
 
 
-#            # pylint: disable=too-many-arguments, too-many-positional-arguments
-#@transactional
-#def add_object(
-#    session: Session,
-#    data: bytes,
-#    size: int,
-#    user_meta: dict,
-#    encrypt_algo: EncryptAlgo,
-#    compress_algo: CompressAlgo,
-#    enc_params: dict
-#) -> str:
-#    while True:
-#        k = KeyringTable(fwd_ref=KeyringRef.OBJECT)
-#
-#        try:
-#            with session.begin_nested():
-#                session.add(k)
-#                session.flush()
-#            break
-#        except IntegrityError:
-#            logger.debug("key collide, trying new")
-#            continue
-#
-#    o = ObjectsTable(
-#        key=k.key,
-#        data=data,
-#        file_size=size,
-#        disk_size=len(data),
-#        encrypt_algo=encrypt_algo,
-#        compress_algo=compress_algo,
-#        user_meta=user_meta,
-#        enc_params=enc_params
-#    )
-#
-#    session.add(o)
-#    session.flush()
-#
-#    return k.key
-#
-#
 #@transactional
 #def get_object(
 #    session: Session,
@@ -270,107 +231,45 @@ def get_stats(session: Session) -> dict:
 #        ) from e
 
 
-@transactional
-def get_objects(
-    session: Session,
-    keys: list[str]
-) -> list[(str, bytes, dict)]:
-    stmt = select(
-        ObjectsTable
-    ).where(
-        ObjectsTable.key.in_(keys)
-    )
-
-    try:
-        objs = session.execute(stmt).scalars().all()
-    except Exception as e:
-        logger.exception(e)
-        raise DBException(
-            "Something unexpected happened, while fetching Object(s)."
-        ) from e
-
-    return [(
-        obj.key,
-        obj.data,
-        {
-            "file_size": obj.file_size,
-            "disk_size": obj.disk_size,
-            "user_meta": obj.user_meta,
-            "encrypt_algo": obj.encrypt_algo,
-            "compress_algo": obj.compress_algo,
-            "created_on": obj.created_on,
-            "modified_on": obj.modified_on,
-            "enc_params": obj.enc_params
-        }
-    ) for obj in objs]
-
-#                                           # pylint: disable=too-many-arguments
-#                                # pylint: disable=too-many-positional-arguments
-#                                              # pylint: disable=too-many-locals
 #@transactional
-#def add_objects(
+#def get_objects(
 #    session: Session,
-#    datas: list[bytes],
-#    sizes: list[int],
-#    user_metas: list[dict],
-#    encrypt_algos: list[EncryptAlgo],
-#    compress_algos: list[CompressAlgo],
-#    enc_params: dict,
-#    chunk_size: int = 512
-#) -> list[str]:
-#    keys = []
+#    keys: list[str]
+#) -> list[(str, bytes, dict)]:
+#    stmt = select(
+#        ObjectsTable
+#    ).where(
+#        ObjectsTable.key.in_(keys)
+#    )
 #
-#    needed = len(datas)
-#    for _ in range(ceil(needed / chunk_size)):
-#        while True:
-#            keyrings = [
-#                KeyringTable(fwd_ref=KeyringRef.OBJECT) for _ in range(
-#                    min(chunk_size, needed)
-#                )
-#            ]
+#    try:
+#        objs = session.execute(stmt).scalars().all()
+#    except Exception as e:
+#        logger.exception(e)
+#        raise DBException(
+#            "Something unexpected happened, while fetching Object(s)."
+#        ) from e
 #
-#            try:
-#                with session.begin_nested():
-#                    session.add_all(keyrings)
-#                    session.flush()
-#                break
-#            except IntegrityError:
-#                logger.debug("key collide, trying new")
-#                continue
-#
-#        objs = []
-#        for _ in range(min(chunk_size, needed)):
-#            k = keyrings.pop(0)
-#            data = datas.pop(0)
-#            size = sizes.pop(0)
-#            user_meta = user_metas.pop(0)
-#            encrypt_algo = encrypt_algos.pop(0)
-#            compress_algo = compress_algos.pop(0)
-#
-#            objs += [ObjectsTable(
-#                key=k.key,
-#                data=data,
-#                file_size=size,
-#                disk_size=len(data),
-#                encrypt_algo=encrypt_algo,
-#                compress_algo=compress_algo,
-#                user_meta=user_meta,
-#                enc_params=enc_params
-#            )]
-#            keys += [k.key]
-#
-#        session.add_all(objs)
-#        session.flush()
-#
-#        needed = needed - chunk_size
-#
-#    return keys
+#    return [(
+#        obj.key,
+#        obj.data,
+#        {
+#            "file_size": obj.file_size,
+#            "disk_size": obj.disk_size,
+#            "user_meta": obj.user_meta,
+#            "encrypt_algo": obj.encrypt_algo,
+#            "compress_algo": obj.compress_algo,
+#            "created_on": obj.created_on,
+#            "modified_on": obj.modified_on,
+#            "enc_params": obj.enc_params
+#        }
+#    ) for obj in objs]
 
 
 @transactional
 def add_objects(
     session: Session,
-    data: list[(int, (bytes, int, dict, EncryptAlgo, CompressAlgo))],
+    data: list[tuple[int, tuple[bytes, int, dict, EncryptAlgo, CompressAlgo]]],
     enc_params: dict,
     bulk_op: int
 ) -> list[(int, str)]:
@@ -420,87 +319,127 @@ def add_objects(
 
 
 @transactional
-def del_objects(
+def get_objects(
     session: Session,
-    keys: list[str]
-):
-    stmt_1 = delete(
-        ObjectsTable
-    ).where(
-        ObjectsTable.key.in_(keys)
-    )
-
-    stmt_2 = delete(
-        KeyringTable
-    ).where(
-        KeyringTable.key.in_(keys)
-    )
-
-    try:
-        session.execute(stmt_1)
-        session.execute(stmt_2)
-        session.flush()
-    except IntegrityError as e:
-        logger.exception(e)
-        raise DBException(
-            "Can't delete data, integrity check failed."
-        ) from e
-    except Exception as e:
-        logger.exception(e)
-        raise DBException(
-            "Something unexpected happened, while deleting data."
-        ) from e
-
-
-@transactional
-def add_file(
-    session: Session,
-    file: Path,
-    name: str,
-    file_size: int,
-    disk_size: int,
-    user_meta: dict,
-    encrypt_algo: EncryptAlgo,
-    compress_algo: CompressAlgo,
-    permission: str,
-    ownership: str,
-    created_on: datetime,
-    modified_on: datetime,
-    last_accessed_on: datetime,
-    enc_params: dict
-) -> str:
-    while True:
-        k = KeyringTable(fwd_ref=KeyringRef.FILES)
+    keys: set[str],
+    bulk_op: int
+) -> list[tuple[str, bytes, dict]]:
+    it = iter(keys)
+    data = []
+    while kl := list(islice(it, bulk_op)):
+        stmt = select(
+            ObjectsTable
+        ).where(
+            ObjectsTable.key.in_(kl)
+        )
 
         try:
-            with session.begin_nested():
-                session.add(k)
-                session.flush()
-            break
-        except IntegrityError:
-            logger.debug("key collide, trying new")
-            continue
+            objs = session.execute(stmt).scalars().all()
+        except Exception as e:
+            logger.exception(e)
+            raise DBException(
+                "Something unexpected happened, while fetching Object(s)."
+            ) from e
 
-    o = FilesTable(
-        key=k.key,
-        loc=file.as_posix(),
-        name=name,
-        file_size=file_size,
-        disk_size=disk_size,
-        encrypt_algo=encrypt_algo,
-        compress_algo=compress_algo,
-        user_meta=user_meta,
-        permission=permission,
-        ownership=ownership,
-        created_on=created_on,
-        modified_on=modified_on,
-        last_accessed_on=last_accessed_on,
-        enc_params=enc_params
-    )
+        data += [(
+            obj.key,
+            obj.data,
+            {
+                "file_size": obj.file_size,
+                "disk_size": obj.disk_size,
+                "user_meta": obj.user_meta,
+                "encrypt_algo": obj.encrypt_algo,
+                "compress_algo": obj.compress_algo,
+                "created_on": obj.created_on,
+                "modified_on": obj.modified_on,
+                "enc_params": obj.enc_params
+            }
+        ) for obj in objs]
 
-    session.add(o)
-    session.flush()
+    return data
 
-    return k.key
 
+#@transactional
+#def del_objects(
+#    session: Session,
+#    keys: list[str]
+#):
+#    stmt_1 = delete(
+#        ObjectsTable
+#    ).where(
+#        ObjectsTable.key.in_(keys)
+#    )
+#
+#    stmt_2 = delete(
+#        KeyringTable
+#    ).where(
+#        KeyringTable.key.in_(keys)
+#    )
+#
+#    try:
+#        session.execute(stmt_1)
+#        session.execute(stmt_2)
+#        session.flush()
+#    except IntegrityError as e:
+#        logger.exception(e)
+#        raise DBException(
+#            "Can't delete data, integrity check failed."
+#        ) from e
+#    except Exception as e:
+#        logger.exception(e)
+#        raise DBException(
+#            "Something unexpected happened, while deleting data."
+#        ) from e
+
+
+#@transactional
+#def add_file(
+#    session: Session,
+#    file: Path,
+#    name: str,
+#    file_size: int,
+#    disk_size: int,
+#    user_meta: dict,
+#    encrypt_algo: EncryptAlgo,
+#    compress_algo: CompressAlgo,
+#    permission: str,
+#    ownership: str,
+#    created_on: datetime,
+#    modified_on: datetime,
+#    last_accessed_on: datetime,
+#    enc_params: dict
+#) -> str:
+#    while True:
+#        k = KeyringTable(fwd_ref=KeyringRef.FILES)
+#
+#        try:
+#            with session.begin_nested():
+#                session.add(k)
+#                session.flush()
+#            break
+#        except IntegrityError:
+#            logger.debug("key collide, trying new")
+#            continue
+#
+#    o = FilesTable(
+#        key=k.key,
+#        loc=file.as_posix(),
+#        name=name,
+#        file_size=file_size,
+#        disk_size=disk_size,
+#        encrypt_algo=encrypt_algo,
+#        compress_algo=compress_algo,
+#        user_meta=user_meta,
+#        permission=permission,
+#        ownership=ownership,
+#        created_on=created_on,
+#        modified_on=modified_on,
+#        last_accessed_on=last_accessed_on,
+#        enc_params=enc_params
+#    )
+#
+#    session.add(o)
+#    session.flush()
+#
+#    return k.key
 

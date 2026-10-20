@@ -65,13 +65,13 @@ class BytesStream:                     # pylint: disable=too-few-public-methods
 DataInItem: TypeAlias = str | bytes | Path | Iterable[bytes]
 DataInType: TypeAlias = DataInItem | list[DataInItem]
 
-DataOutItem: TypeAlias = tuple[str, Iterable[bytes], dict]
+DataOutItem: TypeAlias = tuple[str, None | Iterable[bytes], None | dict]
 DataOutType: TypeAlias = DataOutItem | list[DataOutItem]
 
 PasskeyItem: TypeAlias = str | bytes | SecretStr
 PasskeyType: TypeAlias = PasskeyItem | list[PasskeyItem]
 
-CompressAlgoType: TypeAlias = CompressAlgo | list[CompressAlgo]
-EncryptAlgoType: TypeAlias = EncryptAlgo | list[EncryptAlgo]
+CompressAlgoType: TypeAlias = str | CompressAlgo | list[CompressAlgo]
+EncryptAlgoType: TypeAlias = str | EncryptAlgo | list[EncryptAlgo]
 
 
