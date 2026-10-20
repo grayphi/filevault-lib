@@ -501,12 +501,11 @@ class Vault:                          # pylint: disable=too-many-public-methods
             decrypt_key = repeat(decrypt_key)
 
         key = dict(zip(key, decrypt_key))
-        data = []
+        data = {}
 
         with get_session_from(self._session_local) as session:
-            data += [
-                (
-                    k,
+            data.update({
+                k: (
                     decrypt(
                         data=decompress(
                             data=d,
@@ -526,22 +525,18 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     keys=set(key.keys()),
                     bulk_op=self.get_config().get("BULK_OP")
                 )
-            ]
+            })
 
-            for k, _, _ in data:
+            for k in data:
                 key.pop(k)
 
-            #data += get_files(
-            #    session,
-            #    keys=key,
-            #    decrypt_keys=decrypt_key
-            #)
+            # get files
 
-            for k in key.keys():
+            for k in key:
                 logger.debug("Non-existent key <%s>.", k)
-                data += [(k, None, None)]
+                data[k] = (None, None)
 
-        return data.pop(0) if len(data) == 1 else data
+        return data
 
 
 

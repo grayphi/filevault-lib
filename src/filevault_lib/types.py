@@ -7,7 +7,7 @@ import logging
 from enum import Enum
 from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import TypeAlias
+from typing import Any, TypeAlias
 
 from pydantic import SecretStr
 
@@ -65,8 +65,11 @@ class BytesStream:                     # pylint: disable=too-few-public-methods
 DataInItem: TypeAlias = str | bytes | Path | Iterable[bytes]
 DataInType: TypeAlias = DataInItem | list[DataInItem]
 
-DataOutItem: TypeAlias = tuple[str, None | Iterable[bytes], None | dict]
-DataOutType: TypeAlias = DataOutItem | list[DataOutItem]
+DataOutType: TypeAlias = dict[
+    str, tuple[
+        None | Iterator[bytes], None | dict[str, Any]
+    ]
+]
 
 PasskeyItem: TypeAlias = str | bytes | SecretStr
 PasskeyType: TypeAlias = PasskeyItem | list[PasskeyItem]
