@@ -29,6 +29,7 @@ from filevault_lib.types import (
     CompressAlgo,
     EncryptAlgo,
     BytesStream,
+    KeyringRef
 )
 
 
@@ -509,7 +510,7 @@ def _new_shard(
     return Path(p.parent / f"{p.name}-{nxt}")
 
 
-def get_available_shard(
+def _get_available_shard(
     shards_root: Path,
     need_space: int,
     shard_size_limit: int,
@@ -520,22 +521,22 @@ def get_available_shard(
     return None
 
 
-def _save_as_plain_file(                   # pylint: disable=too-many-arguments
+def _save_to(                              # pylint: disable=too-many-arguments
     file: Path,
     encrypt_algo: EncryptAlgo,
     encrypt_key: SecretStr,
     compress_algo: CompressAlgo,
     vault_uuid: str | UUID,
-    files_root: Path,
-    argon_memory_kib: int = Constants.ARGON_MEMORY_KIB,
-    argon_iterations: int = Constants.ARGON_ITERATIONS,
-    argon_lanes: int = Constants.ARGON_LANES,
-    chunk: int = Constants.CHUNKS
+    root: Path,
+    argon_memory_kib: int,
+    argon_iterations: int,
+    argon_lanes: int,
+    chunk: int
 ) -> Path:
     fout = _transform_file(
         file,
         vault_uuid=vault_uuid,
-        root=files_root,
+        root=root,
         create=True
     )
 
@@ -557,25 +558,48 @@ def _save_as_plain_file(                   # pylint: disable=too-many-arguments
         ):
             _fout.write(_chunk)
 
-    return fout
+    return fout.relative_to(root)
+
+
+def _save_as_file(                         # pylint: disable=too-many-arguments
+    file: Path,
+    encrypt_algo: EncryptAlgo,
+    encrypt_key: SecretStr,
+    compress_algo: CompressAlgo,
+    vault_uuid: str | UUID,
+    files_root: Path,
+    argon_memory_kib: int,
+    argon_iterations: int,
+    argon_lanes: int,
+    chunk: int
+) -> Path:
+    return _save_to(
+        file=file,
+        encrypt_algo=encrypt_algo,
+        encrypt_key=encrypt_key,
+        compress_algo=compress_algo,
+        vault_uuid=vault_uuid,
+        root=files_root,
+        argon_memory_kib=argon_memory_kib,
+        argon_iterations=argon_iterations,
+        argon_lanes=argon_lanes,
+        chunk=chunk
+    )
 
 
 def _save_as_shard_file(                   # pylint: disable=too-many-arguments
     file: Path,
-    shard_size_limit: int,
-    shard_filesize_limit: int,
+    shard: Path,
     encrypt_algo: EncryptAlgo,
     encrypt_key: SecretStr,
     compress_algo: CompressAlgo,
     vault_uuid: str | UUID,
     shards_root: Path,
-    cache_root: Path,
-    loose_shard_size: bool,
-    argon_memory_kib: int = Constants.ARGON_MEMORY_KIB,
-    argon_iterations: int = Constants.ARGON_ITERATIONS,
-    argon_lanes: int = Constants.ARGON_LANES,
-    chunk: int = Constants.CHUNKS
-) -> (Path, Path):
+    argon_memory_kib: int,
+    argon_iterations: int,
+    argon_lanes: int,
+    chunk: int
+) -> Path:
     frel = _transform_file(
         file,
         vault_uuid=vault_uuid,
@@ -585,22 +609,12 @@ def _save_as_shard_file(                   # pylint: disable=too-many-arguments
 
     frel = frel.relative_to(shards_root)
 
-    fcache = cache_root / frel
-    if not loose_shard_size:
-        fcache.parent.mkdir(parents=True, exist_ok=True)
-
-        while True:
-            counter = 0
-            try:
-                fcache.touch(exist_ok=False)
-                del counter
-                break
-            except FileExistsError:
-                counter += 1
-                fcache = fcache.parent / f"{fcache.name}-{counter}"
-                continue
-
-        with fcache.open("wb") as _fc:
+    with ZipFile(shard, mode="a", compression=ZIP_STORED) as archive:
+        with archive.open(
+            frel.as_posix(),
+            mode="w",
+            force_zip64=True
+        ) as archf:
             for _chunk in compress(
                 encrypt(
                     file,
@@ -616,58 +630,203 @@ def _save_as_shard_file(                   # pylint: disable=too-many-arguments
                 stream=True,
                 chunk=chunk
             ):
-                _fc.write(_chunk)
+                archf.write(_chunk)
 
-    shard = get_available_shard(
-        shards_root=shards_root,
-        shard_size_limit=shard_size_limit,
-        need_space=(
-            file.stat().st_size if loose_shard_size else fcache.stat().st_size
-        )
+    return frel
+
+
+def _cache_file(
+    file: Path,
+    encrypt_algo: EncryptAlgo,
+    encrypt_key: SecretStr,
+    compress_algo: CompressAlgo,
+    vault_uuid: str | UUID,
+    cache_root: Path,
+    argon_memory_kib: int,
+    argon_iterations: int,
+    argon_lanes: int,
+    chunk: int
+) -> Path:
+    return _save_to(
+        file=file,
+        encrypt_algo=encrypt_algo,
+        encrypt_key=encrypt_key,
+        compress_algo=compress_algo,
+        vault_uuid=vault_uuid,
+        root=cache_root,
+        argon_memory_kib=argon_memory_kib,
+        argon_iterations=argon_iterations,
+        argon_lanes=argon_lanes,
+        chunk=chunk
     )
 
-    if not shard:
-        shard = _new_shard(
-            vault_uuid=vault_uuid,
-            shards_root=shards_root,
-            shard_size_limit=shard_size_limit,
-            shard_filesize_limit=shard_filesize_limit,
-            create=True
-        )
+
+def _move_to_file(
+    cached_file: Path,
+    cache_root: Path,
+    files_root: Path
+) -> Path:
+    fp = files_root / cached_file.relative_to(cache_root)
+    fp.parent.mkdir(parents=True, exist_ok=True)
+
+    if fp.exists():
+        _f = [
+            i.name.partition("-")[2]
+            for i in Path(fp.parent).iterdir() if i.name.startswith(fp.name)
+        ]
+
+        try:
+            _f.remove("")
+        except ValueError:
+            pass
+
+        try:
+            nxt = max(int(i, 16) for i in _f) + 1
+        except ValueError:
+            nxt = 0
+
+        nxt = f"{nxt:02x}"
+        nxt = nxt.zfill(len(nxt) + len(nxt) % 2)
+
+        fp = fp.parent / f"{fp.name}-{nxt}"
+
+    cached_file.replace(fp)
+
+    return fp.relative_to(files_root)
+
+
+def _move_to_shard(
+    shard: Path,
+    cached_file: Path,
+    cache_root: Path
+) -> Path:
+    frel = cached_file.relative_to(cache_root)
 
     with ZipFile(shard, mode="a", compression=ZIP_STORED) as archive:
-        if loose_shard_size:
-            with archive.open(
-                frel.as_posix(),
-                mode="w",
-                force_zip64=True
-            ) as archf:
-                for _chunk in compress(
-                    encrypt(
-                        file,
-                        algo=encrypt_algo,
-                        secret=encrypt_key,
-                        stream=True,
-                        chunk=chunk,
-                        argon_memory_kib=argon_memory_kib,
-                        argon_iterations=argon_iterations,
-                        argon_lanes=argon_lanes
-                    ),
-                    algo=compress_algo,
-                    stream=True,
-                    chunk=chunk
-                ):
-                    archf.write(_chunk)
-        else:
-            archive.write(fcache, arcname=frel.as_posix())
+        archive.write(
+            cached_file,
+            arcname=frel.as_posix()
+        )
 
-    if (fcache.exists()
-        and fcache.is_file()
-        and fcache.relative_to(cache_root)
+    if (cached_file.exists()
+        and cached_file.is_file()
+        and cached_file.is_relative_to(cache_root)
     ):
-        fcache.unlink(missing_ok=True)
+        cached_file.unlink(missing_ok=True)
 
-    return (shard, frel)
+    return frel
 
+
+def save_file(
+    file: Path,
+    shard_size_limit: int,
+    shard_filesize_limit: int,
+    encrypt_algo: EncryptAlgo,
+    encrypt_key: SecretStr,
+    compress_algo: CompressAlgo,
+    vault_uuid: str | UUID,
+    files_root: Path,
+    shards_root: Path,
+    cache_root: Path,
+    loose_shard_size: bool,
+    chunk: int,
+    argon_memory_kib: int,
+    argon_iterations: int,
+    argon_lanes: int
+) -> tuple[KeyringRef, Path, Path | None]:
+    fs_orig = file.stat().st_size
+    type_ = None
+    fp = None
+    sp = None
+
+    if loose_shard_size:
+        if fs_orig <= shard_filesize_limit:
+            type_ = KeyringRef.SHARDS
+            sp = _get_available_shard(
+                shards_root=shards_root,
+                shard_size_limit=shard_size_limit,
+                need_space=fs_orig
+            ) or _new_shard(
+                vault_uuid=vault_uuid,
+                shards_root=shards_root,
+                shard_size_limit=shard_size_limit,
+                shard_filesize_limit=shard_filesize_limit,
+                create=True
+            )
+
+            fp = _save_as_shard_file(
+                file=file,
+                shard=sp,
+                encrypt_algo=encrypt_algo,
+                encrypt_key=encrypt_key,
+                compress_algo=compress_algo,
+                vault_uuid=vault_uuid,
+                shards_root=shards_root,
+                argon_memory_kib=argon_memory_kib,
+                argon_iterations=argon_iterations,
+                argon_lanes=argon_lanes,
+                chunk=chunk
+            )
+
+            sp = sp.relative_to(shards_root)
+        else:
+            type_ = KeyringRef.FILES
+            fp = _save_as_file(
+                file=file,
+                encrypt_algo=encrypt_algo,
+                encrypt_key=encrypt_key,
+                compress_algo=compress_algo,
+                vault_uuid=vault_uuid,
+                files_root=files_root,
+                argon_memory_kib=argon_memory_kib,
+                argon_iterations=argon_iterations,
+                argon_lanes=argon_lanes,
+                chunk=chunk
+            )
+    else:
+        fc = _cache_file(
+            file=file,
+            encrypt_algo=encrypt_algo,
+            encrypt_key=encrypt_key,
+            compress_algo=compress_algo,
+            vault_uuid=vault_uuid,
+            cache_root=cache_root,
+            argon_memory_kib=argon_memory_kib,
+            argon_iterations=argon_iterations,
+            argon_lanes=argon_lanes,
+            chunk=chunk
+        )
+        fc = cache_root / fc
+        fc_size = fc.stat().st_size
+
+        if fc_size <= shard_filesize_limit:
+            type_ = KeyringRef.SHARDS
+            sp = _get_available_shard(
+                shards_root=shards_root,
+                shard_size_limit=shard_size_limit,
+                need_space=fc_size
+            ) or _new_shard(
+                vault_uuid=vault_uuid,
+                shards_root=shards_root,
+                shard_size_limit=shard_size_limit,
+                shard_filesize_limit=shard_filesize_limit,
+                create=True
+            )
+
+            fp = _move_to_shard(
+                shard=sp,
+                cached_file=fc,
+                cache_root=cache_root
+            )
+            sp = sp.relative_to(shards_root)
+        else:
+            type_ = KeyringRef.FILES
+            fp = _move_to_file(
+                cached_file=fc,
+                cache_root=cache_root,
+                files_root=files_root
+            )
+
+    return (type_, fp, sp)
 
 

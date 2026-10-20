@@ -32,6 +32,7 @@ from filevault_lib.types import (
     PasskeyType,
     CompressAlgoType,
     EncryptAlgoType,
+    KeyringRef,
 )
 from filevault_lib.utils import (
     get_vault_uuid,
@@ -39,6 +40,7 @@ from filevault_lib.utils import (
     decompress,
     encrypt,
     decrypt,
+    save_file,
 )
 from filevault_lib.exceptions import (
     InvalidVaultKey,
@@ -421,7 +423,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
         o = []
         s = []
         f = []
-        keys = []
 
         for idx, _ds in enumerate(
             zip(data, meta, encrypt_algo, encrypt_key, compress_algo)
@@ -430,29 +431,39 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 o += [(idx, _ds)]
             elif isinstance(_ds[0], Iterable):
                 s += [(idx, _ds)]
-            else:
-                f += [(idx, _ds)]
-        o_ = []
+            elif isinstance(_ds[0], Path):
+                if not (_ds[0].exists() and _ds[0].is_file()):
+                    raise FileNotFoundError(f"File not found: {_ds[0]}")
 
-        while o:
-            idx, (d, m, ea, ek, ca) = o.pop(0)
-            s = len(d)
-            d = compress(
-                data=encrypt(
-                    data=d,
-                    algo=ea,
-                    secret=ek,
-                    stream=True,
-                    chunk=self.get_config().get("CHUNKS"),
-                    **ep
-                ),
-                algo=ca,
-                stream=True,
-                chunk=self.get_config().get("CHUNKS")
-            )
-            o_ += [(idx, (d, s, m, ea, ca))]
+                if not os.access(_ds[0], os.R_OK):
+                    raise PermissionError(f"File not readable: {_ds[0]}")
+
+                f += [(idx, _ds)]
+            else:
+                raise InputInconsitentException("Invalid data provided.")
+
+        keys = []
 
         with get_session_from(self._session_local) as session:
+            o_ = []
+            while o:
+                idx, (d, m, ea, ek, ca) = o.pop(0)
+                s = len(d)
+                d = compress(
+                        data=encrypt(
+                        data=d,
+                        algo=ea,
+                        secret=ek,
+                        stream=True,
+                        chunk=self.get_config().get("CHUNKS"),
+                        **ep
+                    ),
+                    algo=ca,
+                    stream=True,
+                    chunk=self.get_config().get("CHUNKS")
+                )
+                o_ += [(idx, (d, s, m, ea, ca))]
+
             keys += add_objects(
                 session,
                 data=o_,
@@ -460,7 +471,76 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 bulk_op=self.get_config().get("BULK_OP")
             )
 
-        # -----
+        with get_session_from(self._session_local) as session:
+            while f:
+                idx, (df, um, ea, ek, ca) = f.pop(0)
+                inf = df.stat()
+                fm = {
+                    "name": df.name,
+                    "file_size": inf.st_size,
+                    "permission": inf.st_mode,
+                    "ownership": f"{inf.st_uid}:{inf.st_gid}",
+                    "created_on": datetime.fromtimestamp(inf.st_ctime),
+                    "modified_on": datetime.fromtimestamp(inf.st_mtime),
+                    "last_accessed_on": datetime.fromtimestamp(inf.st_atime),
+                }
+
+                t, df_, df_s = save_file(
+                    df,
+                    shard_size_limit=self.get_config().get("MAX_SHARD_SIZE"),
+                    shard_filesize_limit=self.get_config().get(
+                        "MAX_FILE_SIZE_IN_SHARD"
+                    ),
+                    encrypt_algo=ea,
+                    encrypt_key=ek,
+                    compress_algo=ca,
+                    vault_uuid=self.get_uuid(),
+                    files_root=self.get_files_root(),
+                    shards_root=self.get_shards_root(),
+                    cache_root=self.get_cache_root(),
+                    loose_shard_size=self.get_config().get("LOOSE_SHARD_SIZE"),
+                    chunk=self.get_config().get("CHUNKS"),
+                    **ep
+                )
+
+                try:
+                    if t == KeyringRef.FILES:
+                        k = add_file(
+                            session,
+                            file=df_.relative_to(self.get_files_root()),
+                            disk_size=df_.stat().st_size,
+                            user_meta=um,
+                            encrypt_algo=ea,
+                            compress_algo=ca,
+                            enc_params=ep,
+                            **fm
+                        )
+                    else:
+                        k = add_shard_file(
+                            session,
+                            file=df_.relative_to(self.get_shards_root()),
+                            shard=df_s.relative_to(self.get_shards_root()),
+                            disk_size=df_.stat().st_size,
+                            user_meta=um,
+                            encrypt_algo=ea,
+                            compress_algo=ca,
+                            enc_params=ep,
+                            **fm
+                        )
+
+                    keys += [(idx, k)]
+                except Exception as e:
+                    logger.exception(e)
+                    logger.error(
+                        "Can't save file, something unexpected happen."
+                    )
+# FIXME
+#                    try:
+#                        if df_.is_relative_to(self.get_root()):
+#                            df_.unlink(missing_ok=True)
+#                    except ValueError:
+#                        pass
+                    raise e
 
         keys.sort(key=lambda x: x[0])
         keys = [j for _, j in keys]
