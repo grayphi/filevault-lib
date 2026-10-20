@@ -350,7 +350,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
             data = [data]
 
         data = [
-            d.encode(self.get_config().get("ENCODING", "UTF-8")) for d in data
+            d.encode(self.get_config().get("ENCODING")) for d in data
         ]
 
         n_size = len(data)
@@ -413,9 +413,16 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     ) from ve
             compress_algo = repeat(compress_algo)
 
+        ep = {
+            "argon_memory_kib": self.get_config().get("ARGON_MEMORY_KIB"),
+            "argon_iterations": self.get_config().get("ARGON_ITERATIONS"),
+            "argon_lanes": self.get_config().get("ARGON_LANES"),
+        }
         o = []
         s = []
         f = []
+        keys = []
+
         for idx, _ds in enumerate(
             zip(data, meta, encrypt_algo, encrypt_key, compress_algo)
         ):
@@ -425,12 +432,8 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 s += [(idx, _ds)]
             else:
                 f += [(idx, _ds)]
-        _o = []
-        ep = {
-            "argon_memory_kib": self.get_config().get("ARGON_MEMORY_KIB"),
-            "argon_iterations": self.get_config().get("ARGON_ITERATIONS"),
-            "argon_lanes": self.get_config().get("ARGON_LANES"),
-        }
+        o_ = []
+
         while o:
             idx, (d, m, ea, ek, ca) = o.pop(0)
             s = len(d)
@@ -444,24 +447,20 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     **ep
                 ),
                 algo=ca,
-                stream=False,
+                stream=True,
                 chunk=self.get_config().get("CHUNKS")
             )
-            _o += [(idx, (d, s, m, ea, ca))]
+            o_ += [(idx, (d, s, m, ea, ca))]
 
         with get_session_from(self._session_local) as session:
-            keys = (
-                add_objects(
-                    session,
-                    data=_o,
-                    enc_params=ep,
-                    bulk_op=self.get_config().get("BULK_OP")
-                #) + add_streams(
-                 #   session,
-                #) + add_files(
-                 #   session,
-                )
+            keys += add_objects(
+                session,
+                data=o_,
+                enc_params=ep,
+                bulk_op=self.get_config().get("BULK_OP")
             )
+
+        # -----
 
         keys.sort(key=lambda x: x[0])
         keys = [j for _, j in keys]
@@ -530,7 +529,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
             for k in data:
                 key.pop(k)
 
-            # get files
+            # -----
 
             for k in key:
                 logger.debug("Non-existent key <%s>.", k)

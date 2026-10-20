@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 from itertools import islice
+from collections.abc import Iterable
 
 from sqlalchemy import (
     select,
@@ -197,9 +198,38 @@ def get_stats(session: Session) -> dict:
 
 
 @transactional
+def _get_keyrings(
+    session: Session,
+    type_: KeyringRef,
+    count: int
+) -> list[KeyringTable]:
+    keyrings = []
+
+    while True:
+        keyrings = [KeyringTable(fwd_ref=type_) for _ in range(count)]
+
+        try:
+            with session.begin_nested():
+                session.add_all(keyrings)
+                session.flush()
+            break
+        except IntegrityError:
+            logger.debug("key collide, trying new")
+            continue
+
+    return keyrings
+
+
+@transactional
 def add_objects(
     session: Session,
-    data: list[tuple[int, tuple[bytes, int, dict, EncryptAlgo, CompressAlgo]]],
+    data: list[
+        tuple[
+            int, tuple[
+                bytes | Iterable[bytes], int, dict, EncryptAlgo, CompressAlgo
+            ]
+        ]
+    ],
     enc_params: dict,
     bulk_op: int
 ) -> list[(int, str)]:
@@ -207,26 +237,17 @@ def add_objects(
     needed = len(data)
 
     for _ in range(ceil(needed / bulk_op)):
-        while True:
-            keyrings = [
-                KeyringTable(fwd_ref=KeyringRef.OBJECT) for _ in range(
-                    min(bulk_op, needed)
-                )
-            ]
-
-            try:
-                with session.begin_nested():
-                    session.add_all(keyrings)
-                    session.flush()
-                break
-            except IntegrityError:
-                logger.debug("key collide, trying new")
-                continue
+        keyrings = _get_keyrings(
+            session,
+            type_=KeyringRef.OBJECT,
+            count=min(bulk_op, needed)
+        )
 
         objs = []
         for _ in range(min(bulk_op, needed)):
             k = keyrings.pop(0)
             idx, (d, s, m, ea, ca) = data.pop(0)
+            d = d if isinstance(d, bytes) else b"".join(d)
 
             objs += [ObjectsTable(
                 key=k.key,
