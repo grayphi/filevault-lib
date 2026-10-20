@@ -349,11 +349,12 @@ class Vault:                          # pylint: disable=too-many-public-methods
         if not data:
             raise InputInconsitentException("Missing input data.")
 
-        if isinstance(data, str):
-            data = data.encode(self.get_config().get("ENCODING", "UTF-8"))
-
         if not isinstance(data, list):
             data = [data]
+
+        data = [
+            d.encode(self.get_config().get("ENCODING", "UTF-8")) for d in data
+        ]
 
         n_size = len(data)
 
