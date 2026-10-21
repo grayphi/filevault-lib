@@ -343,54 +343,44 @@ def get_objects(
 #        ) from e
 
 
-#@transactional
-#def add_file(
-#    session: Session,
-#    file: Path,
-#    name: str,
-#    file_size: int,
-#    disk_size: int,
-#    user_meta: dict,
-#    encrypt_algo: EncryptAlgo,
-#    compress_algo: CompressAlgo,
-#    permission: str,
-#    ownership: str,
-#    created_on: datetime,
-#    modified_on: datetime,
-#    last_accessed_on: datetime,
-#    enc_params: dict
-#) -> str:
-#    while True:
-#        k = KeyringTable(fwd_ref=KeyringRef.FILES)
-#
-#        try:
-#            with session.begin_nested():
-#                session.add(k)
-#                session.flush()
-#            break
-#        except IntegrityError:
-#            logger.debug("key collide, trying new")
-#            continue
-#
-#    o = FilesTable(
-#        key=k.key,
-#        loc=file.as_posix(),
-#        name=name,
-#        file_size=file_size,
-#        disk_size=disk_size,
-#        encrypt_algo=encrypt_algo,
-#        compress_algo=compress_algo,
-#        user_meta=user_meta,
-#        permission=permission,
-#        ownership=ownership,
-#        created_on=created_on,
-#        modified_on=modified_on,
-#        last_accessed_on=last_accessed_on,
-#        enc_params=enc_params
-#    )
-#
-#    session.add(o)
-#    session.flush()
-#
-#    return k.key
+@transactional
+def add_file(
+    session: Session,
+    file: Path,
+    name: str,
+    file_size: int,
+    disk_size: int,
+    user_meta: dict,
+    encrypt_algo: EncryptAlgo,
+    compress_algo: CompressAlgo,
+    permission: str,
+    ownership: str,
+    created_on: datetime,
+    modified_on: datetime,
+    last_accessed_on: datetime,
+    enc_params: dict
+) -> str:
+    k = _get_keyrings(session, type_=KeyringRef.FILES, count=1)
+
+    o = FilesTable(
+        key=k.key,
+        loc=file.as_posix(),
+        name=name,
+        file_size=file_size,
+        disk_size=disk_size,
+        encrypt_algo=encrypt_algo,
+        compress_algo=compress_algo,
+        user_meta=user_meta,
+        permission=permission,
+        ownership=ownership,
+        created_on=created_on,
+        modified_on=modified_on,
+        last_accessed_on=last_accessed_on,
+        enc_params=enc_params
+    )
+
+    session.add(o)
+    session.flush()
+
+    return k.key
 

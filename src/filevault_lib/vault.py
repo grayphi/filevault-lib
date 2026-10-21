@@ -65,6 +65,7 @@ from filevault_lib.db import (
     get_stats,
     get_objects,
     add_objects,
+    add_file,
 )
 
 
@@ -340,7 +341,8 @@ class Vault:                          # pylint: disable=too-many-public-methods
         meta: dict | list[dict] = None,
         encrypt_algo: EncryptAlgoType = EncryptAlgo.NONE,
         encrypt_key: PasskeyType = None,
-        compress_algo: CompressAlgoType = CompressAlgo.NONE
+        compress_algo: CompressAlgoType = CompressAlgo.NONE,
+        strict: bool = False
     ) -> str | list[str]:
         if not self.is_open:
             raise VaultNotOpenError("Vault is not open.")
@@ -443,104 +445,121 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 raise InputInconsitentException("Invalid data provided.")
 
         keys = []
+        o_ = []
 
-        with get_session_from(self._session_local) as session:
-            o_ = []
-            while o:
-                idx, (d, m, ea, ek, ca) = o.pop(0)
-                s = len(d)
-                d = compress(
-                        data=encrypt(
-                        data=d,
-                        algo=ea,
-                        secret=ek,
-                        stream=True,
-                        chunk=self.get_config().get("CHUNKS"),
-                        **ep
-                    ),
-                    algo=ca,
+        while o:
+            idx, (d, m, ea, ek, ca) = o.pop(0)
+            s = len(d)
+            d = compress(
+                    data=encrypt(
+                    data=d,
+                    algo=ea,
+                    secret=ek,
                     stream=True,
-                    chunk=self.get_config().get("CHUNKS")
-                )
-                o_ += [(idx, (d, s, m, ea, ca))]
-
-            keys += add_objects(
-                session,
-                data=o_,
-                enc_params=ep,
-                bulk_op=self.get_config().get("BULK_OP")
-            )
-
-        with get_session_from(self._session_local) as session:
-            while f:
-                idx, (df, um, ea, ek, ca) = f.pop(0)
-                inf = df.stat()
-                fm = {
-                    "name": df.name,
-                    "file_size": inf.st_size,
-                    "permission": inf.st_mode,
-                    "ownership": f"{inf.st_uid}:{inf.st_gid}",
-                    "created_on": datetime.fromtimestamp(inf.st_ctime),
-                    "modified_on": datetime.fromtimestamp(inf.st_mtime),
-                    "last_accessed_on": datetime.fromtimestamp(inf.st_atime),
-                }
-
-                t, df_, df_s = save_file(
-                    df,
-                    shard_size_limit=self.get_config().get("MAX_SHARD_SIZE"),
-                    shard_filesize_limit=self.get_config().get(
-                        "MAX_FILE_SIZE_IN_SHARD"
-                    ),
-                    encrypt_algo=ea,
-                    encrypt_key=ek,
-                    compress_algo=ca,
-                    vault_uuid=self.get_uuid(),
-                    files_root=self.get_files_root(),
-                    shards_root=self.get_shards_root(),
-                    cache_root=self.get_cache_root(),
-                    loose_shard_size=self.get_config().get("LOOSE_SHARD_SIZE"),
                     chunk=self.get_config().get("CHUNKS"),
                     **ep
-                )
+                ),
+                algo=ca,
+                stream=True,
+                chunk=self.get_config().get("CHUNKS")
+            )
+            o_ += [(idx, (d, s, m, ea, ca))]
 
+        try:
+            with get_session_from(self._session_local) as session:
+                keys += add_objects(
+                    session,
+                    data=o_,
+                    enc_params=ep,
+                    bulk_op=self.get_config().get("BULK_OP")
+                )
+        except Exception as e:
+            logger.exception(e)
+            logger.error(
+                "Can't save objects, something unexpected happen."
+            )
+            raise e if strict else keys += [(idx, None) for idx, _ in o_]
+
+        while f:
+            idx, (df, um, ea, ek, ca) = f.pop(0)
+            inf = df.stat()
+            k = None
+            fm = {
+                "name": df.name,
+                "file_size": inf.st_size,
+                "permission": inf.st_mode,
+                "ownership": f"{inf.st_uid}:{inf.st_gid}",
+                "created_on": datetime.fromtimestamp(inf.st_ctime),
+                "modified_on": datetime.fromtimestamp(inf.st_mtime),
+                "last_accessed_on": datetime.fromtimestamp(inf.st_atime),
+            }
+
+            t, df_, df_s = save_file(
+                df,
+                shard_size_limit=self.get_config().get("MAX_SHARD_SIZE"),
+                shard_filesize_limit=self.get_config().get(
+                    "MAX_FILE_SIZE_IN_SHARD"
+                ),
+                encrypt_algo=ea,
+                encrypt_key=ek,
+                compress_algo=ca,
+                vault_uuid=self.get_uuid(),
+                files_root=self.get_files_root(),
+                shards_root=self.get_shards_root(),
+                cache_root=self.get_cache_root(),
+                loose_shard_size=self.get_config().get("LOOSE_SHARD_SIZE"),
+                chunk=self.get_config().get("CHUNKS"),
+                **ep
+            )
+
+            if t == KeyringRef.FILES:
                 try:
-                    if t == KeyringRef.FILES:
+                    with get_session_from(self._session_local) as session:
                         k = add_file(
                             session,
-                            file=df_.relative_to(self.get_files_root()),
-                            disk_size=df_.stat().st_size,
+                            file=df_,
+                            disk_size=(
+                                self.get_files_root() / df_
+                            ).stat().st_size,
                             user_meta=um,
                             encrypt_algo=ea,
                             compress_algo=ca,
                             enc_params=ep,
                             **fm
                         )
-                    else:
-                        k = add_shard_file(
-                            session,
-                            file=df_.relative_to(self.get_shards_root()),
-                            shard=df_s.relative_to(self.get_shards_root()),
-                            disk_size=df_.stat().st_size,
-                            user_meta=um,
-                            encrypt_algo=ea,
-                            compress_algo=ca,
-                            enc_params=ep,
-                            **fm
-                        )
-
-                    keys += [(idx, k)]
                 except Exception as e:
                     logger.exception(e)
                     logger.error(
                         "Can't save file, something unexpected happen."
                     )
-# FIXME
-#                    try:
-#                        if df_.is_relative_to(self.get_root()):
-#                            df_.unlink(missing_ok=True)
-#                    except ValueError:
-#                        pass
-                    raise e
+                    try:
+                        (self.get_files_root() /  df_).unlink(missing_ok=True)
+                    except:
+                        pass
+                    raise e if strict else k=None
+            else:
+                try:
+                    with get_session_from(self._session_local) as session:
+                        k = add_shard_file(
+                            session,
+                            file=df_,
+                            shard=df_s,
+                            disk_size=size_in_shard(df_s, df_),
+                            user_meta=um,
+                            encrypt_algo=ea,
+                            compress_algo=ca,
+                            enc_params=ep,
+                            **fm
+                        )
+                except Exception as e:
+                    logger.exception(e)
+                    logger.error(
+                        "Can't save file, something unexpected happen."
+                    )
+                    delete_from_shard(df_s, df_)
+                    raise e if strict else k=None
+
+            keys += [(idx, k)]
 
         keys.sort(key=lambda x: x[0])
         keys = [j for _, j in keys]
