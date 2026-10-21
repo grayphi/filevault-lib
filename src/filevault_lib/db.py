@@ -6,12 +6,14 @@
 from __future__ import annotations
 
 import logging
+import sys
 from math import ceil
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 from itertools import islice
 from collections.abc import Iterable
+import json
 
 from sqlalchemy import (
     select,
@@ -32,7 +34,6 @@ from filevault_lib.orm import (
     ObjectsTable,
     FilesTable,
     ShardsTable,
-    CacheTable,
 )
 from filevault_lib.types import (
     KeyringRef,
@@ -383,4 +384,75 @@ def add_file(
     session.flush()
 
     return k.key
+
+
+@transactional
+def add_shard_file(
+    session: Session,
+    file: Path,
+    shard: Path,
+    name: str,
+    file_size: int,
+    disk_size: int,
+    user_meta: dict,
+    encrypt_algo: EncryptAlgo,
+    compress_algo: CompressAlgo,
+    permission: str,
+    ownership: str,
+    created_on: datetime,
+    modified_on: datetime,
+    last_accessed_on: datetime,
+    enc_params: dict
+) -> str:
+    k = _get_keyrings(session, type_=KeyringRef.SHARDS, count=1)
+
+    o = ShardsTable(
+        key=k.key,
+        loc=file.as_posix(),
+        shard=shard.as_posix(),
+        name=name,
+        file_size=file_size,
+        disk_size=disk_size,
+        encrypt_algo=encrypt_algo,
+        compress_algo=compress_algo,
+        user_meta=user_meta,
+        permission=permission,
+        ownership=ownership,
+        created_on=created_on,
+        modified_on=modified_on,
+        last_accessed_on=last_accessed_on,
+        enc_params=enc_params
+    )
+
+    session.add(o)
+    session.flush()
+
+    return k.key
+
+
+@transactional
+def record_dirty_shard(
+    session: Session,
+    shard: Path
+) -> None:
+    if sys.version_info[:2] >= (3, 16):  # future version directly supports
+        return                           #  file remove form zipfilem, so there
+                                         #  will not be any dirty shard.
+
+    ctx_key = "dirty_shards"
+    shard = shard.as_posix()
+
+    ds = get_runtime_context_var(session, key=ctx_key)
+    ds = json.loads(ds) if ds else {}
+
+    # update total number of files that needs to be removed from shard
+    ds[shard] = ds.get(shard, 0) + 1
+    ds = json.dumps(ds)
+
+    set_runtime_context_var(
+        session,
+        key=ctx_key,
+        value=ds
+    )
+
 

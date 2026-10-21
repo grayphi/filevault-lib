@@ -4,8 +4,9 @@
 
 
 import os
+import sys
 import logging
-from uuid import UUID, uuid5
+from uuid import UUID, uuid5, uuid4
 from pathlib import Path
 from collections.abc import Iterable, Iterator
 import secrets
@@ -828,5 +829,33 @@ def save_file(
             )
 
     return (type_, fp, sp)
+
+
+def filesize_in_shard(
+    shard: Path,
+    file: Path
+) -> int:
+    with ZipFile(shard) as zf:
+        info = zf.getinfo(file)
+        return info.compress_size
+
+
+def delete_entry_from_shard(
+    shard: Path,
+    file: Path
+) -> None:
+    if sys.version_info[:2] < (3, 16):
+        with ZipFile(shard, mode="a") as zf:
+            f = zf.NameToInfo.pop(file.as_posix(), None)
+
+            if f:
+                zf.filelist.remove(f)
+
+            zf.mkdir(f"__temp__/{uuid4().hex}/")
+    else:
+        with ZipFile(shard, mode="a") as archive:
+                                                    # pylint: disable=no-member
+            removed = archive.remove(file.as_posix())
+            archive.repack([removed])
 
 

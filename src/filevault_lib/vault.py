@@ -4,6 +4,7 @@
 
 
 import os
+import sys
 import logging
 import shutil
 from pathlib import Path
@@ -41,6 +42,8 @@ from filevault_lib.utils import (
     encrypt,
     decrypt,
     save_file,
+    delete_entry_from_shard,
+    filesize_in_shard,
 )
 from filevault_lib.exceptions import (
     InvalidVaultKey,
@@ -66,6 +69,8 @@ from filevault_lib.db import (
     get_objects,
     add_objects,
     add_file,
+    add_shard_file,
+    record_dirty_shard,
 )
 
 
@@ -473,17 +478,18 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     enc_params=ep,
                     bulk_op=self.get_config().get("BULK_OP")
                 )
-        except Exception as e:
+        except Exception as e:         # pylint: disable=broad-exception-caught
             logger.exception(e)
             logger.error(
                 "Can't save objects, something unexpected happen."
             )
-            raise e if strict else keys += [(idx, None) for idx, _ in o_]
+            if strict:
+                raise e
+            keys += [(idx, None) for idx, _ in o_]
 
         while f:
             idx, (df, um, ea, ek, ca) = f.pop(0)
             inf = df.stat()
-            k = None
             fm = {
                 "name": df.name,
                 "file_size": inf.st_size,
@@ -527,16 +533,19 @@ class Vault:                          # pylint: disable=too-many-public-methods
                             enc_params=ep,
                             **fm
                         )
-                except Exception as e:
+                except Exception as e: # pylint: disable=broad-exception-caught
                     logger.exception(e)
                     logger.error(
                         "Can't save file, something unexpected happen."
                     )
                     try:
                         (self.get_files_root() /  df_).unlink(missing_ok=True)
-                    except:
+                    except:                       # pylint: disable=bare-except
                         pass
-                    raise e if strict else k=None
+
+                    if strict:
+                        raise e
+                    k=None
             else:
                 try:
                     with get_session_from(self._session_local) as session:
@@ -544,22 +553,38 @@ class Vault:                          # pylint: disable=too-many-public-methods
                             session,
                             file=df_,
                             shard=df_s,
-                            disk_size=size_in_shard(df_s, df_),
+                            disk_size=filesize_in_shard(
+                                self.get_shards_root() / df_s,
+                                df_
+                            ),
                             user_meta=um,
                             encrypt_algo=ea,
                             compress_algo=ca,
                             enc_params=ep,
                             **fm
                         )
-                except Exception as e:
+                except Exception as e: # pylint: disable=broad-exception-caught
                     logger.exception(e)
                     logger.error(
                         "Can't save file, something unexpected happen."
                     )
-                    delete_from_shard(df_s, df_)
-                    raise e if strict else k=None
+                    delete_entry_from_shard(
+                        self.get_shards_root() / df_s,
+                        df_
+                    )
+
+                    with get_session_from(self._session_local) as session:
+                        record_dirty_shard(session, shard=df_s)
+
+                    if strict:
+                        raise e
+                    k=None
 
             keys += [(idx, k)]
+
+        while s:
+            # process streams
+            pass
 
         keys.sort(key=lambda x: x[0])
         keys = [j for _, j in keys]
@@ -749,7 +774,9 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
 
     def sync(self):
-        pass
+        if sys.version_info[:2] < (3, 16):
+            pass
+            # TODO reclaim deleted file space from dirty shards
 
 
     def export_to(self):

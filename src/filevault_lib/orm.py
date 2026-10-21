@@ -17,6 +17,7 @@ from sqlalchemy import (
     Enum,
     LargeBinary,
     DateTime,
+    Text,
 )
 from sqlalchemy.orm import (
     Mapped,
@@ -51,9 +52,9 @@ class RuntimeContextTable(Base):       # pylint: disable=too-few-public-methods
         primary_key=True
     )
     value: Mapped[str] = mapped_column(
-        String(100),
+        Text,
         nullable=False,
-        server_default=""
+        server_default=text("")
     )
 
 
