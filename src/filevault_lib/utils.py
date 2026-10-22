@@ -833,8 +833,10 @@ def save_file(                             # pylint: disable=too-many-arguments
 
 def filesize_in_shard(
     shard: Path,
-    file: Path
+    file: str | Path
 ) -> int:
+    file = file.as_posix() if isinstance(file, Path) else Path
+
     with ZipFile(shard) as zf:
         info = zf.getinfo(file)
         return info.compress_size
@@ -842,11 +844,13 @@ def filesize_in_shard(
 
 def delete_entry_from_shard(
     shard: Path,
-    file: Path
+    file: str | Path
 ) -> None:
+    file = file.as_posix() if isinstance(file, Path) else Path
+
     if sys.version_info[:2] < (3, 16):
         with ZipFile(shard, mode="a") as zf:
-            f = zf.NameToInfo.pop(file.as_posix(), None)
+            f = zf.NameToInfo.pop(file, None)
 
             if f:
                 zf.filelist.remove(f)
@@ -855,7 +859,7 @@ def delete_entry_from_shard(
     else:
         with ZipFile(shard, mode="a") as archive:
                                                     # pylint: disable=no-member
-            removed = archive.remove(file.as_posix())
+            removed = archive.remove(file)
             archive.repack([removed])
 
 

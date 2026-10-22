@@ -329,7 +329,7 @@ def add_file(             # pylint: disable=too-many-arguments, too-many-locals
     last_accessed_on: datetime,
     enc_params: dict
 ) -> str:
-    k = _get_keyrings(session, type_=KeyringRef.FILES, count=1)
+    k = _get_keyrings(session, type_=KeyringRef.FILES, count=1).pop(0)
 
     o = FilesTable(
         key=k.key,
@@ -372,7 +372,7 @@ def add_shard_file(       # pylint: disable=too-many-arguments, too-many-locals
     last_accessed_on: datetime,
     enc_params: dict
 ) -> str:
-    k = _get_keyrings(session, type_=KeyringRef.SHARDS, count=1)
+    k = _get_keyrings(session, type_=KeyringRef.SHARDS, count=1).pop(0)
 
     o = ShardsTable(
         key=k.key,
