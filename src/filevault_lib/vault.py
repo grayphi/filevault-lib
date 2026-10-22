@@ -443,9 +443,9 @@ class Vault:                          # pylint: disable=too-many-public-methods
             "argon_iterations": self.get_config().get("ARGON_ITERATIONS"),
             "argon_lanes": self.get_config().get("ARGON_LANES"),
         }
-        o = []
-        s = []
-        f = []
+        objs = []
+        streams = []
+        files = []
         keys = {}
 
         for idx, _ds in enumerate(
@@ -454,9 +454,9 @@ class Vault:                          # pylint: disable=too-many-public-methods
             keys[idx] = None
 
             if isinstance(_ds[0], bytes):
-                o += [(idx, _ds)]
+                objs += [(idx, _ds)]
             elif isinstance(_ds[0], Iterable):
-                s += [(idx, _ds)]
+                streams += [(idx, _ds)]
             elif isinstance(_ds[0], Path):
                 if not (_ds[0].exists() and _ds[0].is_file()):
                     raise FileNotFoundError(f"File not found: {_ds[0]}")
@@ -464,14 +464,14 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 if not os.access(_ds[0], os.R_OK):
                     raise PermissionError(f"File not readable: {_ds[0]}")
 
-                f += [(idx, _ds)]
+                files += [(idx, _ds)]
             else:
                 raise InputInconsitentException("Invalid data provided.")
 
-        o_ = []
+        objs_ = []
 
-        while o:
-            idx, (d, m, ea, ek, ca) = o.pop(0)
+        while objs:
+            idx, (d, m, ea, ek, ca) = objs.pop(0)
             s = len(d)
             d = compress(
                     data=encrypt(
@@ -486,7 +486,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 stream=True,
                 chunk=self.get_config().get("CHUNKS")
             )
-            o_ += [(idx, (d, s, m, ea, ca))]
+            objs_ += [(idx, (d, s, m, ea, ca))]
 
         try:
             with get_session_from(self._session_local) as session:
@@ -494,7 +494,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     dict(
                         add_objects(
                             session,
-                            data=o_,
+                            data=objs_,
                             enc_params=ep,
                             bulk_op=self.get_config().get("BULK_OP")
                         )
@@ -508,8 +508,8 @@ class Vault:                          # pylint: disable=too-many-public-methods
             if strict:
                 return _unpack_keys(keys)
 
-        while f:
-            idx, (df, um, ea, ek, ca) = f.pop(0)
+        while files:
+            idx, (df, um, ea, ek, ca) = files.pop(0)
             inf = df.stat()
             fm = {
                 "name": df.name,
@@ -599,7 +599,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     if strict:
                         return _unpack_keys(keys)
 
-        while s:
+        while streams:
             # process streams
             pass
 
