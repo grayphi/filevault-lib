@@ -193,6 +193,9 @@ class Vault:                          # pylint: disable=too-many-public-methods
         self._config.set("UUID", self.get_uuid())
         self._root = self.get_container() / self.get_uuid()
 
+        if self.get_config().get("SYNC_ON_LOAD"):
+            self.sync()
+
 
     def save(self, to_file: Path|str) -> None:
         save_config_to(to_file)
@@ -325,6 +328,9 @@ class Vault:                          # pylint: disable=too-many-public-methods
     def close(self) -> None:
         if not self.is_open:
             raise VaultNotOpenError("Vault is not open.")
+
+        if self.get_config().get("SYNC_ON_CLOSE"):
+            self.sync()
 
         with get_session_from(self._session_local) as session:
             set_status(session, "closed")
@@ -729,18 +735,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
         return data
 
 
-
-#    def rm(
-#        self,
-#        key: str
-#    ):
-#        if not self.is_open:
-#            raise VaultNotOpenError("Vault is not open.")
-#
-#        with get_session_from(self._session_local) as session:
-#            del_object(session=session, key=key)
-
-
 #    def mrm(
 #        self,
 #        keys: list[str]
@@ -757,8 +751,12 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
 
     def sync(self):
+        logger.info("STARTS SYNCING...")
+
         if sys.version_info[:2] < (3, 16):
             pass            # TODO reclaim deleted file space from dirty shards
+
+        logger.info("ENDS SYNCING...")
 
 
     def export_to(self):
