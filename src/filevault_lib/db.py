@@ -266,7 +266,7 @@ def get_objects(
             {
                 "file_size": obj.file_size,
                 "disk_size": obj.disk_size,
-                "user_meta": obj.user_meta,
+                "meta": obj.user_meta,
                 "encrypt_algo": obj.encrypt_algo,
                 "compress_algo": obj.compress_algo,
                 "created_on": obj.created_on,
@@ -451,14 +451,18 @@ def get_files(
             obj.key,
             Path(obj.loc),
             {
+                "name": obj.name,
                 "file_size": obj.file_size,
                 "disk_size": obj.disk_size,
-                "user_meta": obj.user_meta,
+                "meta": obj.user_meta,
                 "encrypt_algo": obj.encrypt_algo,
                 "compress_algo": obj.compress_algo,
                 "created_on": obj.created_on,
                 "modified_on": obj.modified_on,
-                "enc_params": obj.enc_params
+                "last_accessed_on": obj.last_accessed_on,
+                "enc_params": obj.enc_params,
+                "permission": obj.permission,
+                "ownership": obj.ownership
             }
         ) for obj in objs]
 
@@ -494,14 +498,18 @@ def get_shards_files(
             Path(obj.shard),
             Path(obj.loc),
             {
+                "name": obj.name,
                 "file_size": obj.file_size,
                 "disk_size": obj.disk_size,
-                "user_meta": obj.user_meta,
+                "meta": obj.user_meta,
                 "encrypt_algo": obj.encrypt_algo,
                 "compress_algo": obj.compress_algo,
                 "created_on": obj.created_on,
                 "modified_on": obj.modified_on,
-                "enc_params": obj.enc_params
+                "last_accessed_on": obj.last_accessed_on,
+                "enc_params": obj.enc_params,
+                "permission": obj.permission,
+                "ownership": obj.ownership
             }
         ) for obj in objs]
 
