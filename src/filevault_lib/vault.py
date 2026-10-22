@@ -375,8 +375,9 @@ class Vault:                          # pylint: disable=too-many-public-methods
             data = [data]
 
         data = [
-            d.encode(self.get_config().get("ENCODING")) for d in data
-                if isinstance(d, str)
+            d.encode(self.get_config().get("ENCODING"))
+            if isinstance(d, str) else d
+            for d in data
         ]
 
         n_size = len(data)
