@@ -54,7 +54,7 @@ class RuntimeContextTable(Base):       # pylint: disable=too-few-public-methods
     value: Mapped[str] = mapped_column(
         Text,
         nullable=False,
-        server_default=text("")
+        server_default=""
     )
 
 
