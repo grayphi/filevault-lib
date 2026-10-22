@@ -456,3 +456,87 @@ def record_dirty_shard(
     )
 
 
+@transactional
+def get_files(
+    session: Session,
+    keys: set[str],
+    bulk_op: int    
+) -> list[tuple[str, Path, dict]]
+    it = iter(keys)
+    data = []
+    while kl := list(islice(it, bulk_op)):
+        stmt = select(
+            FilesTable
+        ).where(
+            FilesTable.key.in_(kl)
+        )
+
+        try:
+            objs = session.execute(stmt).scalars().all()
+        except Exception as e:
+            logger.exception(e)
+            raise DBException(
+                "Something unexpected happened, while fetching file(s)."
+            ) from e
+
+        data += [(
+            obj.key,
+            Path(obj.loc),
+            {
+                "file_size": obj.file_size,
+                "disk_size": obj.disk_size,
+                "user_meta": obj.user_meta,
+                "encrypt_algo": obj.encrypt_algo,
+                "compress_algo": obj.compress_algo,
+                "created_on": obj.created_on,
+                "modified_on": obj.modified_on,
+                "enc_params": obj.enc_params
+            }
+        ) for obj in objs]
+
+    return data
+
+
+@transactional
+def get_shards_files(
+    session: Session,
+    keys: set[str],
+    bulk_op: int
+) -> list[tuple[str, Path, Path, dict]]:
+    it = iter(keys)
+    data = []
+    while kl := list(islice(it, bulk_op)):
+        stmt = select(
+            ShardsTable
+        ).where(
+            ShardsTable.key.in_(kl)
+        )
+
+        try:
+            objs = session.execute(stmt).scalars().all()
+        except Exception as e:
+            logger.exception(e)
+            raise DBException(
+                "Something unexpected happened, while fetching "
+                "shard(s)'s file(s)."
+            ) from e
+
+        data += [(
+            obj.key,
+            Path(obj.shard),
+            Path(obj.loc),
+            {
+                "file_size": obj.file_size,
+                "disk_size": obj.disk_size,
+                "user_meta": obj.user_meta,
+                "encrypt_algo": obj.encrypt_algo,
+                "compress_algo": obj.compress_algo,
+                "created_on": obj.created_on,
+                "modified_on": obj.modified_on,
+                "enc_params": obj.enc_params
+            }
+        ) for obj in objs]
+
+    return data
+
+

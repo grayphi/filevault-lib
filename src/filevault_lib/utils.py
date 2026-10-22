@@ -859,3 +859,24 @@ def delete_entry_from_shard(
             archive.repack([removed])
 
 
+def get_shard_file(
+    shard: Path,
+    file: str | Path,
+    stream: bool,
+    chunk: int
+) -> bytes | Iterable[bytes]:
+    file = file.as_posix() if isinstance(file, Path) else file
+
+    if not stream:
+        with ZipFile(shard, "r") as archive:
+            return archive.read(file)
+
+    def iter_chunks() -> Iterable[bytes]:
+        with ZipFile(shard, "r") as archive:
+            with archive.open(file, "r") as member:
+                while part := member.read(chunk):
+                    yield part
+
+    return iter_chunks()
+
+

@@ -44,6 +44,7 @@ from filevault_lib.utils import (
     save_file,
     delete_entry_from_shard,
     filesize_in_shard,
+    get_shard_file,
 )
 from filevault_lib.exceptions import (
     InvalidVaultKey,
@@ -71,6 +72,8 @@ from filevault_lib.db import (
     add_file,
     add_shard_file,
     record_dirty_shard,
+    get_files,
+    get_shards_files,
 )
 
 
@@ -349,6 +352,11 @@ class Vault:                          # pylint: disable=too-many-public-methods
         compress_algo: CompressAlgoType = CompressAlgo.NONE,
         strict: bool = False
     ) -> str | list[str]:
+        def _unpack_keys(kd: dict[int, str | None]) -> str | list[str | None]:
+            kl = [v for _, v in sorted(kd.items())]
+
+            return kl.pop(0) if len(kl) == 1 else kl
+
         if not self.is_open:
             raise VaultNotOpenError("Vault is not open.")
 
@@ -430,10 +438,13 @@ class Vault:                          # pylint: disable=too-many-public-methods
         o = []
         s = []
         f = []
+        keys = {}
 
         for idx, _ds in enumerate(
             zip(data, meta, encrypt_algo, encrypt_key, compress_algo)
         ):
+            keys[idx] = None
+
             if isinstance(_ds[0], bytes):
                 o += [(idx, _ds)]
             elif isinstance(_ds[0], Iterable):
@@ -449,7 +460,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
             else:
                 raise InputInconsitentException("Invalid data provided.")
 
-        keys = []
         o_ = []
 
         while o:
@@ -472,20 +482,22 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
         try:
             with get_session_from(self._session_local) as session:
-                keys += add_objects(
+                ktl = add_objects(
                     session,
                     data=o_,
                     enc_params=ep,
                     bulk_op=self.get_config().get("BULK_OP")
                 )
+                keys.update({
+                    i: j for i, j in ktl
+                })
         except Exception as e:         # pylint: disable=broad-exception-caught
             logger.exception(e)
             logger.error(
                 "Can't save objects, something unexpected happen."
             )
             if strict:
-                raise e
-            keys += [(idx, None) for idx, _ in o_]
+                return _unpack_keys(keys)
 
         while f:
             idx, (df, um, ea, ek, ca) = f.pop(0)
@@ -521,7 +533,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
             if t == KeyringRef.FILES:
                 try:
                     with get_session_from(self._session_local) as session:
-                        k = add_file(
+                        keys[idx] = add_file(
                             session,
                             file=df_,
                             disk_size=(
@@ -544,12 +556,11 @@ class Vault:                          # pylint: disable=too-many-public-methods
                         pass
 
                     if strict:
-                        raise e
-                    k=None
+                        return _unpack_keys(keys)
             else:
                 try:
                     with get_session_from(self._session_local) as session:
-                        k = add_shard_file(
+                        keys[idx] = add_shard_file(
                             session,
                             file=df_,
                             shard=df_s,
@@ -577,19 +588,13 @@ class Vault:                          # pylint: disable=too-many-public-methods
                         record_dirty_shard(session, shard=df_s)
 
                     if strict:
-                        raise e
-                    k=None
-
-            keys += [(idx, k)]
+                        return _unpack_keys(keys)
 
         while s:
             # process streams
             pass
 
-        keys.sort(key=lambda x: x[0])
-        keys = [j for _, j in keys]
-
-        return keys.pop(0) if len(keys) == 1 else keys
+        return _unpack_keys(keys)
 
 
     def get(
@@ -651,9 +656,71 @@ class Vault:                          # pylint: disable=too-many-public-methods
             })
 
             for k in data:
-                key.pop(k)
+                if k in key:
+                    key.pop(k)
 
-            # -----
+        with get_session_from(self._session_local) as session:
+            data.update({
+                k: (
+                    decrypt(
+                        data=decompress(
+                            data=(self.get_files_root() / f),
+                            algo=m.pop("compress_algo"),
+                            stream=True,
+                            chunk=self.get_config().get("CHUNKS")
+                        ),
+                        algo=m.pop("encrypt_algo"),
+                        secret=key.get(k),
+                        stream=True,
+                        chunk=self.get_config().get("CHUNKS"),
+                        **m.pop("enc_params")
+                    ),
+                    m
+                ) for k, f, m in get_files(
+                    session,
+                    keys=set(key.keys()),
+                    bulk_op=self.get_config().get("BULK_OP")
+                )
+            })
+
+            for k in data:
+                if k in key:
+                    key.pop(k)
+
+        with get_session_from(self._session_local) as session:
+            data.update({
+                k: (
+                    decrypt(
+                        data=decompress(
+                            data=(
+                                get_shard_file(
+                                    shard=(self.get_shards_root() / s),
+                                    file=f,
+                                    stream=True,
+                                    chunk=self.get_config().get("CHUNKS")
+                                )
+                            ),
+                            algo=m.pop("compress_algo"),
+                            stream=True,
+                            chunk=self.get_config().get("CHUNKS")
+                        ),
+                        algo=m.pop("encrypt_algo"),
+                        secret=key.get(k),
+                        stream=True,
+                        chunk=self.get_config().get("CHUNKS"),
+                        **m.pop("enc_params")
+                    ),
+                    m
+                ) for k, s, f, m in get_shards_files(
+                    session,
+                    keys=set(key.keys()),
+                    bulk_op=self.get_config().get("BULK_OP")
+                )
+            })
+
+            for k in data:
+                if k in key:
+                    key.pop(k)
 
             for k in key:
                 logger.debug("Non-existent key <%s>.", k)
@@ -685,98 +752,13 @@ class Vault:                          # pylint: disable=too-many-public-methods
 #            del_objects(session=session, keys=keys)
 
 
-#    def putf(
-#        self,
-#        file: Path,
-#        user_meta: dict = None,
-#        encrypt_algo: EncryptAlgo = EncryptAlgo.NONE,
-#        encrypt_key: str | SecretStr = None,
-#        compress_algo: CompressAlgo = CompressAlgo.NONE
-#    ) -> str:
-#        if not self.is_open:
-#            raise VaultNotOpenError("Vault is not open.")
-#
-#        file = Path(file)
-#
-#        if not (file.exists() or file.is_file()):
-#            raise FileNotFoundError(f"File not found: {file}")
-#
-#        if not os.access(file, os.R_OK):
-#            raise PermissionError(f"File not readable: {file}")
-#
-#        encrypt_key = (SecretStr(encrypt_key) if isinstance(encrypt_key, str)
-#            else encrypt_key)
-#        info = file.stat()
-#
-#        meta = {
-#            "name": file.name,
-#            "file_size": info.st_size,
-#            "permission": info.st_mode,
-#            "ownership": f"{info.st_uid}:{info.st_gid}",
-#            "created_on": datetime.fromtimestamp(info.st_ctime),
-#            "modified_on": datetime.fromtimestamp(info.st_mtime),
-#            "last_accessed_on": datetime.fromtimestamp(info.st_atime),
-#        }
-#        enc_params = {
-#            "argon_memory_kib": self.get_config().get("ARGON_MEMORY_KIB"),
-#            "argon_iterations": self.get_config().get("ARGON_ITERATIONS"),
-#            "argon_lanes": self.get_config().get("ARGON_LANES"),
-#        }
-#
-#        file = save_file_as(
-#            file,
-#            shard_size_limit=self.get_config().get("MAX_SHARD_SIZE"),
-#            shard_filesize_limit=self.get_config().get(
-#                "MAX_FILE_SIZE_IN_SHARD"
-#            ),
-#            encrypt_algo=encrypt_algo,
-#            encrypt_key=encrypt_key,
-#            compress_algo=compress_algo,
-#            vault_uuid=self.get_uuid(),
-#            files_root=self.get_files_root(),
-#            shards_root=self.get_shards_root(),
-#            cache_root=self.get_cache_root(),
-#            loose_shard_size=self.get_config().get("LOOSE_SHARD_SIZE"),
-#            chunk=self.get_config().get("CHUNKS"),
-#            **enc_params
-#        )
-#
-#        key = None
-#        try:
-#            with get_session_from(self._session_local) as session:
-#                key = add_file(
-#                    session=session,
-#                    file=file.relative_to(self.get_root()),
-#                    disk_size=file.stat().st_size,
-#                    user_meta=user_meta,
-#                    encrypt_algo=encrypt_algo,
-#                    compress_algo=compress_algo,
-#                    enc_params=enc_params,
-#                    **meta
-#                )
-#        except Exception as e:
-#            logger.exception(e)
-#            logger.error("Can't save file, something unexpected happen.")
-#
-#            try:
-#                if file.relative_to(self.get_root()):
-#                    file.unlink(missing_ok=True)
-#            except ValueError:
-#                pass
-#
-#            raise e
-#
-#        return key
-
-
     def query(self):
         pass
 
 
     def sync(self):
         if sys.version_info[:2] < (3, 16):
-            pass
-            # TODO reclaim deleted file space from dirty shards
+            pass            # TODO reclaim deleted file space from dirty shards
 
 
     def export_to(self):
