@@ -610,6 +610,18 @@ def _save_as_shard_file(                   # pylint: disable=too-many-arguments
 
     frel = frel.relative_to(shards_root)
 
+    with ZipFile(shard, mode="r") as archive:
+        n = max((
+            int(f.name.partition("-")[2] or 0)
+            for name in archive.namelist()
+                if (f := Path(name)).parent == frel.parent
+                and f.name.partition("-")[0] == frel.name.partition("-")[0]
+            ),
+            default=0,
+        )
+    n = f"{n + 1:02d}"
+    frel = frel.parent / ("%s-%s" % (frel.name.partition("-")[0], n))
+
     with ZipFile(shard, mode="a", compression=ZIP_STORED) as archive:
         with archive.open(
             frel.as_posix(),
