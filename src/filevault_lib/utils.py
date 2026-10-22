@@ -636,7 +636,7 @@ def _save_as_shard_file(                   # pylint: disable=too-many-arguments
     return frel
 
 
-def _cache_file(
+def _cache_file(                           # pylint: disable=too-many-arguments
     file: Path,
     encrypt_algo: EncryptAlgo,
     encrypt_key: SecretStr,
@@ -718,7 +718,7 @@ def _move_to_shard(
     return frel
 
 
-def save_file(
+def save_file(                             # pylint: disable=too-many-arguments
     file: Path,
     shard_size_limit: int,
     shard_filesize_limit: int,

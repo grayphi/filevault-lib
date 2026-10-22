@@ -349,7 +349,9 @@ class Vault:                          # pylint: disable=too-many-public-methods
             return get_stats(session)
 
 
-    def put(
+                       # pylint: disable=too-many-branches, too-many-statements
+                           # pylint: disable=too-many-arguments,too-many-locals
+    def put(                    # pylint: disable=too-many-positional-arguments
         self,
         data: DataInType,
         meta: dict | list[dict] = None,
@@ -488,15 +490,16 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
         try:
             with get_session_from(self._session_local) as session:
-                ktl = add_objects(
-                    session,
-                    data=o_,
-                    enc_params=ep,
-                    bulk_op=self.get_config().get("BULK_OP")
+                keys.update(
+                    dict(
+                        add_objects(
+                            session,
+                            data=o_,
+                            enc_params=ep,
+                            bulk_op=self.get_config().get("BULK_OP")
+                        )
+                    )
                 )
-                keys.update({
-                    i: j for i, j in ktl
-                })
         except Exception as e:         # pylint: disable=broad-exception-caught
             logger.exception(e)
             logger.error(
@@ -603,7 +606,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
         return _unpack_keys(keys)
 
 
-    def get(
+    def get(                                # pylint: disable=too-many-branches
         self,
         key: str | list[str] | set[str],
         decrypt_key: PasskeyType = None

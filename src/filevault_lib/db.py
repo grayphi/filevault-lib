@@ -165,39 +165,6 @@ def get_stats(session: Session) -> dict:
         ) from e
 
 
-#@transactional
-#def del_object(
-#    session: Session,
-#    key: str
-#):
-#    stmt_1 = delete(
-#        ObjectsTable
-#    ).where(
-#        ObjectsTable.key == key
-#    )
-#
-#    stmt_2 = delete(
-#        KeyringTable
-#    ).where(
-#        KeyringTable.key == key
-#    )
-#
-#    try:
-#        session.execute(stmt_1)
-#        session.execute(stmt_2)
-#        session.flush()
-#    except IntegrityError as e:
-#        logger.exception(e)
-#        raise DBException(
-#            "Can't delete data, integrity check failed."
-#        ) from e
-#    except Exception as e:
-#        logger.exception(e)
-#        raise DBException(
-#            "Something unexpected happened, while deleting data."
-#        ) from e
-
-
 @transactional
 def _get_keyrings(
     session: Session,
@@ -344,8 +311,9 @@ def get_objects(
 #        ) from e
 
 
+                                # pylint: disable=too-many-positional-arguments
 @transactional
-def add_file(
+def add_file(             # pylint: disable=too-many-arguments, too-many-locals
     session: Session,
     file: Path,
     name: str,
@@ -385,9 +353,9 @@ def add_file(
 
     return k.key
 
-
+                                # pylint: disable=too-many-positional-arguments
 @transactional
-def add_shard_file(
+def add_shard_file(       # pylint: disable=too-many-arguments, too-many-locals
     session: Session,
     file: Path,
     shard: Path,
@@ -460,8 +428,8 @@ def record_dirty_shard(
 def get_files(
     session: Session,
     keys: set[str],
-    bulk_op: int    
-) -> list[tuple[str, Path, dict]]
+    bulk_op: int
+) -> list[tuple[str, Path, dict]]:
     it = iter(keys)
     data = []
     while kl := list(islice(it, bulk_op)):
