@@ -301,7 +301,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
             with get_session_from(self._session_local) as session:
                 set_status(session, "open")
         else:
-            logger.debug("vault was not properly closed")
+            logger.warn("vault was not properly closed")
             # FIXME
 
 
@@ -831,6 +831,10 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
     def sync(self):
         logger.info("STARTS SYNCING...")
+        logger.warn(
+            "Do not close, or interrupt the process"
+            ", syncing is in progress..."
+        )
 
         if sys.version_info[:2] < (3, 16):
             pass            # TODO reclaim deleted file space from dirty shards
@@ -844,4 +848,9 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
     def import_from(self):
         pass
+
+
+    def shell(self):
+        pass
+
 
