@@ -913,6 +913,7 @@ def get_shard_file(
 
 
 def fetch_stream_properties(ds: Iterable[bytes]) -> dict:
+    # TODO
     sm = {
         "name": None,
         "file_size": None,
@@ -1002,4 +1003,23 @@ def save_stream(                           # pylint: disable=too-many-arguments
 
     return (type_, fp, sp)
 
+
+def del_files(
+    files: list[Path],
+    files_root: Path
+) -> None:
+    for f in files:
+        df = files_root / f
+
+        if df.exists() and df.is_file():
+            df.unlink(missing_ok=True)
+
+
+def del_shard_files(
+    files: list[tuple[Path, Path]],
+    shards_root: Path
+) -> None:
+    for s, f in files:
+        s = shards_root / s
+        delete_entry_from_shard(s, f)
 

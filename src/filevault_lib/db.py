@@ -299,39 +299,6 @@ def get_objects(
     return data
 
 
-#@transactional
-#def del_objects(
-#    session: Session,
-#    keys: list[str]
-#):
-#    stmt_1 = delete(
-#        ObjectsTable
-#    ).where(
-#        ObjectsTable.key.in_(keys)
-#    )
-#
-#    stmt_2 = delete(
-#        KeyringTable
-#    ).where(
-#        KeyringTable.key.in_(keys)
-#    )
-#
-#    try:
-#        session.execute(stmt_1)
-#        session.execute(stmt_2)
-#        session.flush()
-#    except IntegrityError as e:
-#        logger.exception(e)
-#        raise DBException(
-#            "Can't delete data, integrity check failed."
-#        ) from e
-#    except Exception as e:
-#        logger.exception(e)
-#        raise DBException(
-#            "Something unexpected happened, while deleting data."
-#        ) from e
-
-
                                 # pylint: disable=too-many-positional-arguments
 @transactional
 def add_file(             # pylint: disable=too-many-arguments, too-many-locals
@@ -536,4 +503,118 @@ def get_shards_files(
 
     return data
 
+
+@transactional
+def remove_objects(
+    session: Session,
+    keys: set[str],
+    bulk_op: int
+) -> set[str]:
+    it = iter(keys)
+    keys_ = []
+
+    while kl := list(islice(it, bulk_op)):
+        dkeys_ = []
+
+        stmt_1 = delete(
+            ObjectsTable
+        ).where(
+            ObjectsTable.key.in_(kl)
+        ).returning(
+            ObjectsTable.key
+        )
+
+        dkeys_ = session.scalars(stmt_1).all()
+        session.flush()
+
+        if dkeys_:
+            stmt_2 = delete(
+                KeyringTable
+            ).where(
+                KeyringTable.key.in_(dkeys_)
+            )
+            session.execute(stmt_2)
+            session.flush()
+
+        keys_ += dkeys_
+
+    return set(keys_)
+
+
+@transactional
+def remove_files(
+    session: Session,
+    keys: set[str],
+    bulk_op: int
+) -> list[tuple[str, Path]]:
+    it = iter(keys)
+    fkeys = []
+
+    while kl := list(islice(it, bulk_op)):
+        tkeys_ = []
+
+        stmt_1 = delete(
+            FilesTable
+        ).where(
+            FilesTable.key.in_(kl)
+        ).returning(
+            FilesTable.key, FilesTable.loc
+        )
+
+        tkeys_ = session.execute(stmt_1).all()
+        session.flush()
+
+        tkeys_ = [(i, Path(j)) for i, j in tkeys_]
+
+        if tkeys_:
+            stmt_2 = delete(
+                KeyringTable
+            ).where(
+                KeyringTable.key.in_([i for i, _ in tkeys_])
+            )
+            session.execute(stmt_2)
+            session.flush()
+
+        fkeys += tkeys_
+
+    return fkeys
+
+
+@transactional
+def remove_shard_files(
+    session: Session,
+    keys: set[str],
+    bulk_op: int
+) -> list[tuple[str, Path, Path]]:
+    it = iter(keys)
+    skeys = []
+
+    while kl := list(islice(it, bulk_op)):
+        tkeys_ = []
+
+        stmt_1 = delete(
+            ShardsTable
+        ).where(
+            ShardsTable.key.in_(kl)
+        ).returning(
+            ShardsTable.key, ShardsTable.shard, ShardsTable.loc
+        )
+
+        tkeys_ = session.execute(stmt_1).all()
+        session.flush()
+
+        tkeys_ = [(i, Path(j), Path(k)) for i, j, k in tkeys_]
+
+        if tkeys_:
+            stmt_2 = delete(
+                KeyringTable
+            ).where(
+                KeyringTable.key.in_([i for i, _, _ in tkeys_])
+            )
+            session.execute(stmt_2)
+            session.flush()
+
+        skeys += tkeys_
+
+    return skeys
 

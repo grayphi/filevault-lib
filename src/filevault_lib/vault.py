@@ -43,6 +43,8 @@ from filevault_lib.utils import (
     get_shard_file,
     save_stream,
     fetch_stream_properties,
+    del_files,
+    del_shard_files,
 )
 from filevault_lib.exceptions import (
     InvalidVaultKey,
@@ -66,11 +68,14 @@ from filevault_lib.db import (
     get_stats,
     get_objects,
     add_objects,
+    remove_objects,
     add_file,
     add_shard_file,
     record_dirty_shard,
     get_files,
     get_shards_files,
+    remove_files,
+    remove_shard_files,
 )
 
 
@@ -301,7 +306,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
             with get_session_from(self._session_local) as session:
                 set_status(session, "open")
         else:
-            logger.warn("vault was not properly closed")
+            logger.warning("vault was not properly closed")
             # FIXME
 
 
@@ -814,15 +819,106 @@ class Vault:                          # pylint: disable=too-many-public-methods
         return data
 
 
-#    def mrm(
-#        self,
-#        keys: list[str]
-#    ):
-#        if not self.is_open:
-#            raise VaultNotOpenError("Vault is not open.")
-#
-#        with get_session_from(self._session_local) as session:
-#            del_objects(session=session, keys=keys)
+    def remove(
+        self,
+        keys: str | list[str] | set[str],
+        strict: bool = False
+    ) -> dict[str, bool]:
+        if not self.is_open:
+            raise VaultNotOpenError("Vault is not open.")
+
+        if isinstance(keys, str):
+            keys = {keys}
+
+        keys = set(keys)
+        status = dict(zip(keys, repeat(False)))
+
+        with get_session_from(self._session_local) as session:
+            try:
+                keys_ = remove_objects(
+                    session=session,
+                    keys=keys,
+                    bulk_op=self.get_config().get("BULK_OP")
+                )
+                status.update(
+                    dict(
+                        zip(
+                            keys_,
+                            repeat(True)
+                        )
+                    )
+                )
+                keys -= keys_
+            except Exception as e:     # pylint: disable=broad-exception-caught
+                logger.exception(e)
+                logger.error(
+                    "Can't remove objects, something unexpected happen."
+                )
+                if strict:
+                    return status
+
+        with get_session_from(self._session_local) as session:
+            try:
+                fkt_ = remove_files(
+                    session=session,
+                    keys=keys,
+                    bulk_op=self.get_config().get("BULK_OP")
+                )
+                del_files(
+                    files=[i for _, i in fkt_],
+                    files_root=self.get_files_root()
+                )
+                status.update(
+                    dict(
+                        zip(
+                            [i for i,_ in fkt_],
+                            repeat(True)
+                        )
+                    )
+                )
+                keys -= {i for i, _ in fkt_}
+            except Exception as e:     # pylint: disable=broad-exception-caught
+                logger.exception(e)
+                logger.error(
+                    "Can't remove files, something unexpected happen."
+                )
+                if strict:
+                    return status
+
+        with get_session_from(self._session_local) as session:
+            try:
+                sfkt_ = remove_shard_files(
+                    session=session,
+                    keys=keys,
+                    bulk_op=self.get_config().get("BULK_OP")
+                )
+                del_shard_files(
+                    files=[(i, j) for _, i, j in sfkt_],
+                    shards_root=self.get_shards_root()
+                )
+                for _, i, _ in sfkt_:
+                    record_dirty_shard(
+                        session=session,
+                        shard=self.get_shards_root() / i
+                    )
+                status.update(
+                    dict(
+                        zip(
+                            [i for i, _, _ in sfkt_],
+                            repeat(True)
+                        )
+                    )
+                )
+                keys -= {i for i, _, _ in sfkt_}
+            except Exception as e:     # pylint: disable=broad-exception-caught
+                logger.exception(e)
+                logger.error(
+                    "Can't remove shard files, something unexpected happen."
+                )
+                if strict:
+                    return status
+
+        return status
 
 
     def query(self):
@@ -831,13 +927,16 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
     def sync(self):
         logger.info("STARTS SYNCING...")
-        logger.warn(
+        logger.warning(
             "Do not close, or interrupt the process"
             ", syncing is in progress..."
         )
 
         if sys.version_info[:2] < (3, 16):
             pass            # TODO reclaim deleted file space from dirty shards
+
+        # TODO delete/recover??? zombie entries
+        # TODO delete/recover??? orphan files
 
         logger.info("ENDS SYNCING...")
 
