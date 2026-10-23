@@ -10,16 +10,12 @@ import shutil
 from pathlib import Path
 from uuid import UUID
 from datetime import datetime
-from collections.abc import Iterator, Iterable
-from typing import TypeAlias
-from io import BytesIO
+from collections.abc import Iterable
 from itertools import repeat
 
 from pydantic import SecretStr
-from cryptography.exceptions import InvalidTag
 
 from filevault_lib.config import (
-    Constants,
     ConfigManager,
     get_constants,
     load_config_for,
@@ -45,6 +41,8 @@ from filevault_lib.utils import (
     delete_entry_from_shard,
     filesize_in_shard,
     get_shard_file,
+    save_stream,
+    fetch_stream_properties,
 )
 from filevault_lib.exceptions import (
     InvalidVaultKey,
@@ -55,7 +53,6 @@ from filevault_lib.exceptions import (
     VaultNotClosedError,
     NonEmptyVaultError,
     InputInconsitentException,
-    VaultDecryptionError,
 )
 from filevault_lib.sqla import (
     create_engine_on,
@@ -602,8 +599,85 @@ class Vault:                          # pylint: disable=too-many-public-methods
                         return _unpack_keys(keys)
 
         while streams:
-            # process streams
-            pass
+            idx, (ds, um, ea, ek, ca) = streams.pop(0)
+            sm = fetch_stream_properties(ds)
+
+            t, df_, df_s = save_stream(
+                stream=ds,
+                shard_size_limit=self.get_config().get("MAX_SHARD_SIZE"),
+                shard_filesize_limit=self.get_config().get(
+                    "MAX_FILE_SIZE_IN_SHARD"
+                ),
+                encrypt_algo=ea,
+                encrypt_key=ek,
+                compress_algo=ca,
+                vault_uuid=self.get_uuid(),
+                files_root=self.get_files_root(),
+                shards_root=self.get_shards_root(),
+                cache_root=self.get_cache_root(),
+                chunk=self.get_config().get("CHUNKS"),
+                **ep
+            )
+
+            if t == KeyringRef.FILES:
+                try:
+                    with get_session_from(self._session_local) as session:
+                        keys[idx] = add_file(
+                            session,
+                            file=df_,
+                            disk_size=(
+                                self.get_files_root() / df_
+                            ).stat().st_size,
+                            user_meta=um,
+                            encrypt_algo=ea,
+                            compress_algo=ca,
+                            enc_params=ep,
+                            **sm
+                        )
+                except Exception as e: # pylint: disable=broad-exception-caught
+                    logger.exception(e)
+                    logger.error(
+                        "Can't save file, something unexpected happen."
+                    )
+                    try:
+                        (self.get_files_root() /  df_).unlink(missing_ok=True)
+                    except:                       # pylint: disable=bare-except
+                        pass
+
+                    if strict:
+                        return _unpack_keys(keys)
+            else:
+                try:
+                    with get_session_from(self._session_local) as session:
+                        keys[idx] = add_shard_file(
+                            session,
+                            file=df_,
+                            shard=df_s,
+                            disk_size=filesize_in_shard(
+                                self.get_shards_root() / df_s,
+                                df_
+                            ),
+                            user_meta=um,
+                            encrypt_algo=ea,
+                            compress_algo=ca,
+                            enc_params=ep,
+                            **sm
+                        )
+                except Exception as e: # pylint: disable=broad-exception-caught
+                    logger.exception(e)
+                    logger.error(
+                        "Can't save file, something unexpected happen."
+                    )
+                    delete_entry_from_shard(
+                        self.get_shards_root() / df_s,
+                        df_
+                    )
+
+                    with get_session_from(self._session_local) as session:
+                        record_dirty_shard(session, shard=df_s)
+
+                    if strict:
+                        return _unpack_keys(keys)
 
         return _unpack_keys(keys)
 

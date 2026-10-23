@@ -1,6 +1,6 @@
 # vim:ts=4:sw=4:cc=80:et:si:sta:ai:nu:nowrap:cul:sm:is:hls:pt=<F3>:noic
 # pylint: disable=missing-module-docstring, missing-function-docstring
-# pylint: disable=missing-class-docstring, trailing-newlines
+# pylint: disable=missing-class-docstring, trailing-newlines, too-many-lines
 
 
 import os
@@ -422,7 +422,22 @@ def _transform_file(
                 {"filename": file.name, "size": file.stat().st_size}
             )
         )
+    ).replace("-", "") if file and isinstance(file, Path) else str(
+        uuid5(
+            UUID(str(vault_uuid)), str(
+                {
+                    "filename": "".join(
+                        random.choices(
+                            string.ascii_letters + string.digits + "_-",
+                            k=17
+                        )
+                    ),
+                    "size": "-"
+                }
+            )
+        )
     ).replace("-", "")
+
     _u = [_u[i:i+2] for i in range(0, len(_u), 2)]
     _u = _u[0:-6] + ["".join(_u[-6:])]
 
@@ -620,6 +635,7 @@ def _save_as_shard_file(                   # pylint: disable=too-many-arguments
             default=0,
         )
     n = f"{n + 1:02d}"
+                                      # pylint: disable=consider-using-f-string
     frel = frel.parent / ("%s-%s" % (frel.name.partition("-")[0], n))
 
     with ZipFile(shard, mode="a", compression=ZIP_STORED) as archive:
@@ -894,5 +910,96 @@ def get_shard_file(
                     yield part
 
     return iter_chunks()
+
+
+def fetch_stream_properties(ds: Iterable[bytes]) -> dict:
+    sm = {
+        "name": None,
+        "file_size": None,
+        "permission": None,
+        "ownership": None,
+        "created_on": None,
+        "modified_on": None,
+        "last_accessed_on": None,
+    }
+
+    return sm
+
+
+def save_stream(                           # pylint: disable=too-many-arguments
+    stream: Iterable[bytes],
+    shard_size_limit: int,
+    shard_filesize_limit: int,
+    encrypt_algo: EncryptAlgo,
+    encrypt_key: SecretStr,
+    compress_algo: CompressAlgo,
+    vault_uuid: str | UUID,
+    files_root: Path,
+    shards_root: Path,
+    cache_root: Path,
+    chunk: int,
+    argon_memory_kib: int,
+    argon_iterations: int,
+    argon_lanes: int
+) -> tuple[KeyringRef, Path, Path | None]:
+    fc = _transform_file(
+        file=None,
+        vault_uuid=vault_uuid,
+        root=cache_root,
+        create=True
+    )
+
+    with fc.open("wb") as _fc:
+        for _chunk in compress(
+            encrypt(
+                stream,
+                algo=encrypt_algo,
+                secret=encrypt_key,
+                stream=True,
+                chunk=chunk,
+                argon_memory_kib=argon_memory_kib,
+                argon_iterations=argon_iterations,
+                argon_lanes=argon_lanes
+            ),
+            algo=compress_algo,
+            stream=True,
+            chunk=chunk
+        ):
+            _fc.write(_chunk)
+
+    fc_size = fc.stat().st_size
+
+    type_ = None
+    fp = None
+    sp = None
+    if fc_size <= shard_filesize_limit:
+        type_ = KeyringRef.SHARDS
+        sp = _get_available_shard(
+            shards_root=shards_root,
+            shard_size_limit=shard_size_limit,
+            need_space=fc_size
+        ) or _new_shard(
+            vault_uuid=vault_uuid,
+            shards_root=shards_root,
+            shard_size_limit=shard_size_limit,
+            shard_filesize_limit=shard_filesize_limit,
+            create=True
+        )
+
+        fp = _move_to_shard(
+            shard=sp,
+            cached_file=fc,
+            cache_root=cache_root
+        )
+        sp = sp.relative_to(shards_root)
+    else:
+        type_ = KeyringRef.FILES
+        fp = _move_to_file(
+            cached_file=fc,
+            cache_root=cache_root,
+            files_root=files_root
+        )
+
+    return (type_, fp, sp)
 
 
