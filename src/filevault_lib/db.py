@@ -148,21 +148,42 @@ def set_status(session: Session, status: str) -> bool:
 
 @transactional
 def get_stats(session: Session) -> dict:
-    stmt = select(
+    stmt_1 = select(
         KeyringTable.fwd_ref,
         func.count().label("total")              # pylint: disable=not-callable
     ).group_by(
         KeyringTable.fwd_ref
     )
 
+
+    stmt_2 = select(
+        func.count(
+            func.distinct(
+                ShardsTable.shard
+            )
+        ).label("total")
+    )
+
+    data = {}
+
     try:
-        count_stats = session.execute(stmt).all()
-        return dict(count_stats)
+        count_stats = session.execute(stmt_1).all()
+        shards_count = session.scalar(stmt_2)
+
+        tc = dict(count_stats)
+
+        data["Files"] = tc.get(KeyringRef.FILES, 0)
+        data["Objects"] = tc.get(KeyringRef.OBJECT, 0)
+        data["Shards"] = shards_count
+        data["Shards Files"] = tc.get(KeyringRef.SHARDS, 0)
+        data["Total"] = sum(tc.values())
     except Exception as e:
         logger.exception(e)
         raise DBException(
             "Something unexpected happened, while fetching stats."
         ) from e
+
+    return data
 
 
 @transactional
