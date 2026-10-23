@@ -206,27 +206,3 @@ class ShardsTable(Base, FileAttrs):    # pylint: disable=too-few-public-methods
         )
     )
 
-
-class CacheTable(Base, FileAttrs):     # pylint: disable=too-few-public-methods
-    __tablename__ = f"{_TABLE_PREFIX_}_CACHE"
-
-    id: Mapped[int] = mapped_column(
-        Integer,
-        primary_key=True,
-        nullable=False,
-        autoincrement='auto'
-
-    )
-    loc: Mapped[str] = mapped_column(
-        String(1024),
-        nullable=False,
-        unique=True
-    )
-
-    __table_args__ = (
-        Index(
-            f"{__tablename__}_SC_IDX_01",
-            loc
-        ),
-    )
-
