@@ -725,7 +725,7 @@ def get_zombie_and_orphan_shard_files(        # pylint: disable=too-many-locals
                     z.add(k)
 
     g1 = iter_files(shards_root)
-    while sl := islice(g1, bulk_op):
+    while sl := list(islice(g1, bulk_op)):
         for s in sl:
             g2 = iter_shard_files(shards_root / s)
             while sfl := set(islice(g2, bulk_op)):
