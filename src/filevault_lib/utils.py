@@ -859,11 +859,38 @@ def save_file(                             # pylint: disable=too-many-arguments
     return (type_, fp, sp)
 
 
+def is_file_in_shard(
+    shard: Path,
+    file: str | Path
+) -> bool:
+    file = file.as_posix() if isinstance(file, Path) else file
+
+    with ZipFile(shard, mode="r") as zf:
+        try:
+            zf.getinfo(file)
+            return True
+        except KeyError:
+            pass
+    return False
+
+
+def iter_shard_files(
+    shard: Path
+) -> Iterator[Path]:
+    def _iter_shard() -> Iterator[Path]:
+        with ZipFile(shard, "r") as zf:
+            for info in zf.infolist():
+                if not info.is_dir():
+                    yield Path(info.filename)
+
+    return _iter_shard()
+
+
 def filesize_in_shard(
     shard: Path,
     file: str | Path
 ) -> int:
-    file = file.as_posix() if isinstance(file, Path) else Path
+    file = file.as_posix() if isinstance(file, Path) else file
 
     with ZipFile(shard) as zf:
         info = zf.getinfo(file)
@@ -874,7 +901,7 @@ def delete_entry_from_shard(
     shard: Path,
     file: str | Path
 ) -> None:
-    file = file.as_posix() if isinstance(file, Path) else Path
+    file = file.as_posix() if isinstance(file, Path) else file
 
     if sys.version_info[:2] < (3, 16):
         with ZipFile(shard, mode="a") as zf:
@@ -1022,4 +1049,11 @@ def del_shard_files(
     for s, f in files:
         s = shards_root / s
         delete_entry_from_shard(s, f)
+
+
+def iter_files(root: Path) -> Iterator[Path]:
+    for r, _, fl in os.walk(root):
+        for f in fl:
+            yield (Path(r) / f).relative_to(root)
+
 

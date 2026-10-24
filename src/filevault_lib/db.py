@@ -11,7 +11,7 @@ from math import ceil
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
-from itertools import islice
+from itertools import islice, repeat
 from collections.abc import Iterable
 import json
 
@@ -19,6 +19,7 @@ from sqlalchemy import (
     select,
     update,
     delete,
+    and_
 )
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.sql import (
@@ -41,6 +42,11 @@ from filevault_lib.types import (
     EncryptAlgo,
 )
 from filevault_lib.exceptions import DBException
+from filevault_lib.utils import (
+    iter_files,
+    is_file_in_shard,
+    iter_shard_files,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -387,7 +393,7 @@ def add_shard_file(       # pylint: disable=too-many-arguments, too-many-locals
 
 
 @transactional
-def record_dirty_shard(
+def record_shard_dirty(
     session: Session,
     shard: Path
 ) -> None:
@@ -399,17 +405,59 @@ def record_dirty_shard(
     shard = shard.as_posix()
 
     ds = get_runtime_context_var(session, key=ctx_key)
-    ds = json.loads(ds) if ds else {}
+    ds = set(json.loads(ds)) if ds else set()
 
-    # update total number of files that needs to be removed from shard
-    ds[shard] = ds.get(shard, 0) + 1
-    ds = json.dumps(ds)
+    ds.add(shard)
+    ds = json.dumps(list(ds))
 
     set_runtime_context_var(
         session,
         key=ctx_key,
         value=ds
     )
+
+
+@transactional
+def record_shard_clean(
+    session: Session,
+    shard: Path
+) -> None:
+    if sys.version_info[:2] >= (3, 16):  # future version directly supports
+        return                           #  file remove form zipfilem, so there
+                                         #  will not be any dirty shard.
+
+    ctx_key = "dirty_shards"
+    shard = shard.as_posix()
+
+    ds = get_runtime_context_var(session, key=ctx_key)
+    ds = set(json.loads(ds)) if ds else set()
+
+    ds.discard(shard)
+    ds = json.dumps(list(ds))
+
+    set_runtime_context_var(
+        session,
+        key=ctx_key,
+        value=ds
+    )
+
+
+@transactional
+def get_dirty_shards(
+    session: Session
+) -> set[Path]:
+    if sys.version_info[:2] >= (3, 16):  # future version directly supports
+        return set()                     #  file remove form zipfilem, so there
+                                         #  will not be any dirty shard.
+
+    ctx_key = "dirty_shards"
+    ds = get_runtime_context_var(session, key=ctx_key)
+
+    return {
+        Path(s) for s in (
+            set(json.loads(ds)) if ds else set()
+        )
+    }
 
 
 @transactional
@@ -624,17 +672,86 @@ def get_zombie_and_orphan_files(
     files_root: Path,
     bulk_op: int
 ) -> tuple[set[str], set[Path]]:
-    pass
+    z = set()
+    o = set()
+
+    stmt1 = select(FilesTable.key, FilesTable.loc)
+
+    with session.execute(
+        stmt1.execution_options(yield_per=bulk_op)
+    ) as result:
+        for batch in result.partitions(bulk_op):
+            for k, l in batch:
+                p = files_root / Path(l)
+                if not (p.exists() and p.is_file()):
+                    z.add(k)
+
+    g = iter_files(files_root)
+    while fl := set(islice(g, bulk_op)):
+        fl = {f.as_posix() for f in fl}
+
+        stmt2 = select(
+            FilesTable.loc
+        ).where(
+            FilesTable.loc.in_(fl)
+        )
+
+        fl_ = session.execute(stmt2).scalars().all()
+        o.update(fl - set(fl_))
+
+    return (z, o)
 
 
-def get_zombie_and_orphan_shard_files(
+def get_zombie_and_orphan_shard_files(        # pylint: disable=too-many-locals
     session: Session,
     shards_root: Path,
     bulk_op: int
 ) -> tuple[set[str], set[tuple[Path, Path]]]:
-    pass
+    z = set()
+    o = set()
 
+    stmt1 = select(ShardsTable.key, ShardsTable.shard, ShardsTable.loc)
 
+    with session.execute(
+        stmt1.execution_options(yield_per=bulk_op)
+    ) as result:
+        for batch in result.partitions(bulk_op):
+            for k, s, l in batch:
+                s = shards_root / Path(s)
+                if not (s.exists()
+                    and s.is_file()
+                    and is_file_in_shard(s, l)
+                ):
+                    z.add(k)
 
+    g1 = iter_files(shards_root)
+    while sl := islice(g1, bulk_op):
+        for s in sl:
+            g2 = iter_shard_files(shards_root / s)
+            while sfl := set(islice(g2, bulk_op)):
+                sfl = {f.as_posix() for f in sfl}
+
+                stmt2 = select(
+                    ShardsTable.loc
+                ).where(
+                    and_(
+                        ShardsTable.shard == s.as_posix(),
+                        ShardsTable.loc.in_(sfl)
+                    )
+                )
+
+                sfl_ = session.execute(stmt2).scalars().all()
+                o.update(
+                    set(
+                        zip(
+                            repeat(s),
+                            {
+                                Path(i) for i in (sfl - set(sfl_))
+                            }
+                        )
+                    )
+                )
+
+    return (z, o)
 
 

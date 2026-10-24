@@ -71,13 +71,14 @@ from filevault_lib.db import (
     remove_objects,
     add_file,
     add_shard_file,
-    record_dirty_shard,
+    record_shard_dirty,
     get_files,
     get_shards_files,
     remove_files,
     remove_shard_files,
     get_zombie_and_orphan_files,
     get_zombie_and_orphan_shard_files,
+    get_dirty_shards,
 )
 
 
@@ -597,7 +598,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     )
 
                     with get_session_from(self._session_local) as session:
-                        record_dirty_shard(session, shard=df_s)
+                        record_shard_dirty(session, shard=df_s)
 
                     if strict:
                         return _unpack_keys(keys)
@@ -678,7 +679,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     )
 
                     with get_session_from(self._session_local) as session:
-                        record_dirty_shard(session, shard=df_s)
+                        record_shard_dirty(session, shard=df_s)
 
                     if strict:
                         return _unpack_keys(keys)
@@ -896,7 +897,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     shards_root=self.get_shards_root()
                 )
                 for _, i, _ in sfkt_:
-                    record_dirty_shard(
+                    record_shard_dirty(
                         session=session,
                         shard=self.get_shards_root() / i
                     )
@@ -918,14 +919,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     return status
 
         return status
-
-
-    def query(self):
-        if not self.is_created:
-            raise VaultNotCreatedError("Vault is not created yet.")
-
-        if not self.is_open:
-            raise VaultNotOpenError("Vault is not open.")
 
 
     def sync(self):
@@ -983,10 +976,28 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 shards_root=self.get_shards_root()
             )
 
+            for s in set(i for i, _ in of):
+                record_shard_dirty(
+                    session=session,
+                    shard=s
+                )
+
         if sys.version_info[:2] < (3, 16):
-            pass            # TODO reclaim deleted file space from dirty shards
+            with get_session_from(self._session_local) as session:
+                for ds in get_dirty_shards(session):
+                    # TODO reclaim deleted file space from dirty shards, and
+                    #  mark shard as clean
+                    pass
 
         logger.info("ENDS SYNCING...")
+
+
+    def query(self):
+        if not self.is_created:
+            raise VaultNotCreatedError("Vault is not created yet.")
+
+        if not self.is_open:
+            raise VaultNotOpenError("Vault is not open.")
 
 
     def export_to(self):
