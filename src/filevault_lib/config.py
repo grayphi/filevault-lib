@@ -40,9 +40,6 @@ class Constants:                       # pylint: disable=too-few-public-methods
     ARGON_ITERATIONS = 1
     ARGON_LANES = 1
     ENCODING = "UTF-8"
-    SYNC_ON_LOAD = False          # sync the vault to perform error correction,
-                                  # and other on-hold activities
-
     SYNC_ON_CLOSE = False         # sync the vault to perform error correction,
                                   # and other on-hold activities
 

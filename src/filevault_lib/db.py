@@ -618,3 +618,23 @@ def remove_shard_files(
 
     return skeys
 
+
+def get_zombie_and_orphan_files(
+    session: Session,
+    files_root: Path,
+    bulk_op: int
+) -> tuple[set[str], set[Path]]:
+    pass
+
+
+def get_zombie_and_orphan_shard_files(
+    session: Session,
+    shards_root: Path,
+    bulk_op: int
+) -> tuple[set[str], set[tuple[Path, Path]]]:
+    pass
+
+
+
+
+

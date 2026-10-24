@@ -1,6 +1,6 @@
 # vim:ts=4:sw=4:cc=80:et:si:sta:ai:nu:nowrap:cul:sm:is:hls:pt=<F3>:noic
 # pylint: disable=missing-module-docstring, missing-function-docstring
-# pylint: disable=missing-class-docstring, trailing-newlines
+# pylint: disable=missing-class-docstring, trailing-newlines, too-many-lines
 
 
 import os
@@ -76,6 +76,8 @@ from filevault_lib.db import (
     get_shards_files,
     remove_files,
     remove_shard_files,
+    get_zombie_and_orphan_files,
+    get_zombie_and_orphan_shard_files,
 )
 
 
@@ -194,9 +196,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
         )
         self._config.set("UUID", self.get_uuid())
         self._root = self.get_container() / self.get_uuid()
-
-        if self.get_config().get("SYNC_ON_LOAD"):
-            self.sync()
 
 
     def save(self, to_file: Path|str) -> None:
@@ -922,21 +921,70 @@ class Vault:                          # pylint: disable=too-many-public-methods
 
 
     def query(self):
-        pass
+        if not self.is_created:
+            raise VaultNotCreatedError("Vault is not created yet.")
+
+        if not self.is_open:
+            raise VaultNotOpenError("Vault is not open.")
 
 
     def sync(self):
+        if not self.is_created:
+            raise VaultNotCreatedError("Vault is not created yet.")
+
+        if not self.is_open:
+            raise VaultNotOpenError("Vault is not open.")
+
         logger.info("STARTS SYNCING...")
         logger.warning(
             "Do not close, or interrupt the process"
             ", syncing is in progress..."
         )
 
+        with get_session_from(self._session_local) as session:
+            zf, of = get_zombie_and_orphan_files(
+                session=session,
+                files_root=self.get_files_root(),
+                bulk_op=self.get_config().get("BULK_OP")
+            )
+
+            logger.debug("Total of %d zombies file(s) found.", len(zf))
+            logger.debug("Total of %d orphan file(s) found.", len(of))
+
+            remove_files(
+                session=session,
+                keys=set(zf),
+                bulk_op=self.get_config().get("BULK_OP")
+            )
+
+            del_files(
+                files=list(of),
+                files_root=self.get_files_root()
+            )
+
+        with get_session_from(self._session_local) as session:
+            zf, of = get_zombie_and_orphan_shard_files(
+                session=session,
+                shards_root=self.get_shards_root(),
+                bulk_op=self.get_config().get("BULK_OP")
+            )
+
+            logger.debug("Total of %d zombies shard file(s) found.", len(zf))
+            logger.debug("Total of %d orphan shard file(s) found.", len(of))
+
+            remove_shard_files(
+                session=session,
+                keys=set(zf),
+                bulk_op=self.get_config().get("BULK_OP")
+            )
+
+            del_shard_files(
+                files=list(of),
+                shards_root=self.get_shards_root()
+            )
+
         if sys.version_info[:2] < (3, 16):
             pass            # TODO reclaim deleted file space from dirty shards
-
-        # TODO delete/recover??? zombie entries
-        # TODO delete/recover??? orphan files
 
         logger.info("ENDS SYNCING...")
 
