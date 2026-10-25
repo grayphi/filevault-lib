@@ -15,4 +15,4 @@ from filevault_lib.utils import (
 logger = logging.getLogger(__name__)
 
 
-__VERSION__ = "0.2.0"
+__VERSION__ = "0.3.0"
