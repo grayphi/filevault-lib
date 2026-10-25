@@ -4,7 +4,6 @@
 
 
 import logging
-from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import (
@@ -18,6 +17,7 @@ from sqlalchemy import (
     Enum,
     LargeBinary,
     DateTime,
+    Text,
 )
 from sqlalchemy.orm import (
     Mapped,
@@ -29,8 +29,10 @@ from sqlalchemy.sql import (
 
 from filevault_lib.sqla import Base
 from filevault_lib.utils import (
-    KeyringRef,
     generate_key,
+)
+from filevault_lib.types import (
+    KeyringRef,
     CompressAlgo,
     EncryptAlgo,
 )
@@ -41,8 +43,7 @@ logger = logging.getLogger(__name__)
 _TABLE_PREFIX_ = "__FILEVAULT_LIB_"
 
 
-@dataclass
-class RuntimeContextTable(Base):
+class RuntimeContextTable(Base):       # pylint: disable=too-few-public-methods
     __tablename__ = f"{_TABLE_PREFIX_}_RUNTIME_CONTEXT"
 
     key: Mapped[str] = mapped_column(
@@ -51,14 +52,13 @@ class RuntimeContextTable(Base):
         primary_key=True
     )
     value: Mapped[str] = mapped_column(
-        String(100),
+        Text,
         nullable=False,
         server_default=""
     )
 
 
-@dataclass
-class KeyringTable(Base):
+class KeyringTable(Base):              # pylint: disable=too-few-public-methods
     __tablename__ = f"{_TABLE_PREFIX_}_KEYRING"
 
     key: Mapped[str] = mapped_column(
@@ -100,15 +100,20 @@ class FileAttrs:                       # pylint: disable=too-few-public-methods
         nullable=False,
         server_default=CompressAlgo.NONE.value
     )
+    enc_params: Mapped[dict] = mapped_column(
+        JSON,
+        nullable=False,
+        server_default="{}"
+    )
     user_meta: Mapped[dict] = mapped_column(
         JSON,
         nullable=False,
         server_default="{}"
     )
-    permission: Mapped[str] = mapped_column(
-        String(4),
+    permission: Mapped[int] = mapped_column(
+        Integer,
         nullable=False,
-        server_default=text("'640'")
+        server_default=text("33184")         # octal: 0o100640, str: -rw-r-----
     )
     ownership: Mapped[str] = mapped_column(
         String(100),
@@ -125,10 +130,14 @@ class FileAttrs:                       # pylint: disable=too-few-public-methods
         nullable=False,
         server_default=func.now()                # pylint: disable=not-callable
     )
+    last_accessed_on: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now()                # pylint: disable=not-callable
+    )
 
 
-@dataclass
-class ObjectsTable(Base, FileAttrs):
+class ObjectsTable(Base, FileAttrs):   # pylint: disable=too-few-public-methods
     __tablename__ = f"{_TABLE_PREFIX_}_OBJECTS"
 
     key: Mapped[str] = mapped_column(
@@ -143,8 +152,7 @@ class ObjectsTable(Base, FileAttrs):
     )
 
 
-@dataclass
-class FilesTable(Base, FileAttrs):
+class FilesTable(Base, FileAttrs):     # pylint: disable=too-few-public-methods
     __tablename__ = f"{_TABLE_PREFIX_}_FILES"
 
     key: Mapped[str] = mapped_column(
@@ -167,8 +175,7 @@ class FilesTable(Base, FileAttrs):
     )
 
 
-@dataclass
-class ShardsTable(Base, FileAttrs):
+class ShardsTable(Base, FileAttrs):    # pylint: disable=too-few-public-methods
     __tablename__ = f"{_TABLE_PREFIX_}_SHARDS"
 
     key: Mapped[str] = mapped_column(
@@ -197,30 +204,5 @@ class ShardsTable(Base, FileAttrs):
             shard,
             loc
         )
-    )
-
-
-@dataclass
-class CacheTable(Base, FileAttrs):
-    __tablename__ = f"{_TABLE_PREFIX_}_CACHE"
-
-    id: Mapped[int] = mapped_column(
-        Integer,
-        primary_key=True,
-        nullable=False,
-        autoincrement='auto'
-
-    )
-    loc: Mapped[str] = mapped_column(
-        String(1024),
-        nullable=False,
-        unique=True
-    )
-
-    __table_args__ = (
-        Index(
-            f"{__tablename__}_SC_IDX_01",
-            loc
-        ),
     )
 

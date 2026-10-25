@@ -52,3 +52,7 @@ class InputInconsitentException(Exception):
     pass
 
 
+class VaultDecryptionError(Exception):
+    pass
+
+

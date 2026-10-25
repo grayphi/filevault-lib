@@ -20,3 +20,6 @@ wheels/
 # Virtual environments
 .venv
 
+# local testing
+local_test/
+

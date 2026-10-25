@@ -6,6 +6,10 @@
 import logging
 
 from filevault_lib.vault import Vault
+from filevault_lib.utils import (
+    CompressAlgo,
+    EncryptAlgo,
+)
 
 
 logger = logging.getLogger(__name__)
