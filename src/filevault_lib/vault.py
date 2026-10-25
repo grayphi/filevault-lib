@@ -7,6 +7,10 @@ import os
 import sys
 import logging
 import shutil
+import json
+import tarfile
+import io
+import time
 from pathlib import Path
 from uuid import UUID
 from datetime import datetime
@@ -1000,15 +1004,109 @@ class Vault:                          # pylint: disable=too-many-public-methods
             raise VaultNotOpenError("Vault is not open.")
 
 
-    def export_to(self):
-        pass
-
-
-    def import_from(self):
-        pass
-
-
     def shell(self):
-        pass
+        raise NotImplementedError
+
+
+    def export_vault(
+        self,
+        destination: str = "-"
+    ) -> None:
+        def write_archive(output) -> None:
+            with tarfile.open(fileobj=output, mode="w|gz") as archive:
+                d = self.get_config().to_dict()
+                d["CONTAINER"] = d["CONTAINER"].as_posix()
+                d["NAMESPACE"] = str(d["NAMESPACE"])
+
+                config_data = json.dumps(d).encode()
+
+                info = tarfile.TarInfo("config.json")
+                info.size = len(config_data)
+                info.mtime = time.time()
+
+                archive.addfile(info, io.BytesIO(config_data))
+                for name in ["files", "shards", "catalog.db"]:
+                    path = self.get_root() / name
+                    if path.exists():
+                        archive.add(
+                            path,
+                            arcname=f"{self.get_uuid()}/{name}",
+                            recursive=True
+                        )
+
+        if destination == "-":
+            write_archive(sys.stdout.buffer)
+        else:
+            with open(destination, "wb") as output:
+                write_archive(output)
+
+
+    def import_vault(
+        self,
+        source: str = "-",
+        container: str | Path | None = None,
+    ) -> None:
+        target = Path(container or self.get_container())
+        target.mkdir(parents=True, exist_ok=True)
+
+        close_stream = source != "-"
+        input_stream = open(source, "rb") if close_stream else sys.stdin.buffer
+
+        try:
+            with tarfile.open(fileobj=input_stream, mode="r|gz") as archive:
+                config_member = archive.next()
+                if (config_member is None
+                    or config_member.name != "config.json"
+                ):
+                    raise ValueError("Archive must begin with config.json")
+
+                config_file = archive.extractfile(config_member)
+                if config_file is None:
+                    raise ValueError("Cannot read config.json")
+
+                with config_file:
+                    config = json.load(config_file)
+
+                uuid = config.get("UUID")
+                if not isinstance(uuid, str) or not uuid:
+                    raise ValueError("Missing or invalid vault UUID in config")
+
+                vault_root = target / uuid
+                vault_root.mkdir(parents=True, exist_ok=True)
+
+                for member in archive:
+                    if member.name == "config.json":
+                        continue
+
+                    path = Path(member.name)
+                    if (
+                        path.is_absolute()
+                        or ".." in path.parts
+                        or not path.parts
+                        or path.parts[0] != uuid
+                    ):
+                        raise ValueError(
+                            f"Invalid archive member: {member.name}"
+                        )
+
+                    relative = path.relative_to(uuid)
+                    if (
+                        not relative.parts
+                        or relative.parts[0] not in {
+                            "files", "shards", "catalog.db"
+                        }
+                        or (
+                            relative.parts[0] == "catalog.db"
+                            and len(relative.parts) != 1
+                        )
+                    ):
+                        raise ValueError(
+                            f"Unexpected archive member: {member.name}"
+                        )
+
+                    archive.extract(member, target, filter="data")
+        finally:
+            if close_stream:
+                input_stream.close()
 
 
