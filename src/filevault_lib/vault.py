@@ -996,18 +996,6 @@ class Vault:                          # pylint: disable=too-many-public-methods
         logger.info("ENDS SYNCING...")
 
 
-    def query(self):
-        if not self.is_created:
-            raise VaultNotCreatedError("Vault is not created yet.")
-
-        if not self.is_open:
-            raise VaultNotOpenError("Vault is not open.")
-
-
-    def shell(self):
-        raise NotImplementedError
-
-
     def export_vault(
         self,
         destination: str = "-"
@@ -1109,4 +1097,15 @@ class Vault:                          # pylint: disable=too-many-public-methods
             if close_stream:
                 input_stream.close()
 
+
+    def query(self):
+        if not self.is_created:
+            raise VaultNotCreatedError("Vault is not created yet.")
+
+        if not self.is_open:
+            raise VaultNotOpenError("Vault is not open.")
+
+
+    def shell(self):
+        raise NotImplementedError
 
