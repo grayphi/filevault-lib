@@ -556,7 +556,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                             disk_size=(
                                 self.get_files_root() / df_
                             ).stat().st_size,
-                            user_meta=um,
+                            meta=um,
                             encrypt_algo=ea,
                             compress_algo=ca,
                             enc_params=ep,
@@ -585,7 +585,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                                 self.get_shards_root() / df_s,
                                 df_
                             ),
-                            user_meta=um,
+                            meta=um,
                             encrypt_algo=ea,
                             compress_algo=ca,
                             enc_params=ep,
@@ -637,7 +637,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                             disk_size=(
                                 self.get_files_root() / df_
                             ).stat().st_size,
-                            user_meta=um,
+                            meta=um,
                             encrypt_algo=ea,
                             compress_algo=ca,
                             enc_params=ep,
@@ -666,7 +666,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                                 self.get_shards_root() / df_s,
                                 df_
                             ),
-                            user_meta=um,
+                            meta=um,
                             encrypt_algo=ea,
                             compress_algo=ca,
                             enc_params=ep,
