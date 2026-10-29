@@ -36,7 +36,7 @@ class Type(Enum):
     ANY = "any"
 
 
-class Expr:
+class Expr:                            # pylint: disable=too-few-public-methods
     lvalue: Any
     op: Any
     rvalue: Any
@@ -47,6 +47,8 @@ class Expr:
         self.rvalue=rvalue
 
 
+                                   # pylint: disable=too-many-return-statements
+                                            # pylint: disable=too-many-branches
     def compile(self, cls: type):
         if cls not in [ObjectsTable, FilesTable, ShardsTable]:
             raise TypeError("Invalid class provided.")
@@ -122,7 +124,18 @@ class Column:
         if cls not in [ObjectsTable, FilesTable, ShardsTable]:
             raise TypeError("Invalid class provided.")
 
-        # FIXME meta column
+        for jcol in ("meta.", "enc_params."):
+            if self._name.startswith(jcol):
+                path = self._name.removeprefix(jcol).split(".")
+                if any(not part for part in path):
+                    raise ValueError(f"Invalid JSON path: {self._name}")
+
+                column = getattr(cls, jcol[:-1])
+                for part in path:
+                    column = column[part]
+
+                return column
+
         if self._name not in cls.__table__.columns.keys():
             raise ValueError(f"Unknown column: {self._name}")
 
