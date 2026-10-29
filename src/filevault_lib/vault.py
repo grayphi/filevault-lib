@@ -49,6 +49,7 @@ from filevault_lib.utils import (
     fetch_stream_properties,
     del_files,
     del_shard_files,
+    reclaim_shard_space,
 )
 from filevault_lib.exceptions import (
     InvalidVaultKey,
@@ -988,12 +989,14 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     shard=s
                 )
 
-        if sys.version_info[:2] < (3, 16):
-            with get_session_from(self._session_local) as session:
-                for ds in get_dirty_shards(session):
-                    # TODO reclaim deleted file space from dirty shards, and
-                    #  mark shard as clean
-                    pass
+        with get_session_from(self._session_local) as session:
+            for ds in get_dirty_shards(session):
+                flag = reclaim_shard_space(
+                    shard=ds,
+                    root=self.get_shards_root()
+                )
+                if flag:
+                    record_shard_clean(session, ds)
 
         logger.info("ENDS SYNCING...")
 
