@@ -10,7 +10,7 @@ import sys
 from math import ceil
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 from itertools import islice, repeat
 from collections.abc import Iterable
 import json
@@ -19,7 +19,8 @@ from sqlalchemy import (
     select,
     update,
     delete,
-    and_
+    and_,
+    SelectBase,
 )
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.sql import (
@@ -36,7 +37,7 @@ from filevault_lib.orm import (
     FilesTable,
     ShardsTable,
 )
-from filevault_lib.types import (
+from filevault_lib.fvtypes import (
     KeyringRef,
     CompressAlgo,
     EncryptAlgo,
@@ -144,10 +145,12 @@ def delete_runtime_context_var(session: Session, key: str) -> bool:
     return flag
 
 
+@transactional
 def get_status(session: Session) -> str:
     return get_runtime_context_var(session, "status")
 
 
+@transactional
 def set_status(session: Session, status: str) -> bool:
     return set_runtime_context_var(session, "status", status)
 
@@ -251,7 +254,7 @@ def add_objects(
                 disk_size=len(d),
                 encrypt_algo=ea,
                 compress_algo=ca,
-                user_meta=m,
+                meta=m,
                 enc_params=enc_params
             )]
             keys += [(idx, k.key)]
@@ -293,7 +296,7 @@ def get_objects(
             {
                 "file_size": obj.file_size,
                 "disk_size": obj.disk_size,
-                "meta": obj.user_meta,
+                "meta": obj.meta,
                 "encrypt_algo": obj.encrypt_algo,
                 "compress_algo": obj.compress_algo,
                 "created_on": obj.created_on,
@@ -313,7 +316,7 @@ def add_file(             # pylint: disable=too-many-arguments, too-many-locals
     name: str,
     file_size: int,
     disk_size: int,
-    user_meta: dict,
+    meta: dict,
     encrypt_algo: EncryptAlgo,
     compress_algo: CompressAlgo,
     permission: str,
@@ -333,7 +336,7 @@ def add_file(             # pylint: disable=too-many-arguments, too-many-locals
         disk_size=disk_size,
         encrypt_algo=encrypt_algo,
         compress_algo=compress_algo,
-        user_meta=user_meta,
+        meta=meta,
         permission=permission,
         ownership=ownership,
         created_on=created_on,
@@ -356,7 +359,7 @@ def add_shard_file(       # pylint: disable=too-many-arguments, too-many-locals
     name: str,
     file_size: int,
     disk_size: int,
-    user_meta: dict,
+    meta: dict,
     encrypt_algo: EncryptAlgo,
     compress_algo: CompressAlgo,
     permission: str,
@@ -377,7 +380,7 @@ def add_shard_file(       # pylint: disable=too-many-arguments, too-many-locals
         disk_size=disk_size,
         encrypt_algo=encrypt_algo,
         compress_algo=compress_algo,
-        user_meta=user_meta,
+        meta=meta,
         permission=permission,
         ownership=ownership,
         created_on=created_on,
@@ -490,7 +493,7 @@ def get_files(
                 "name": obj.name,
                 "file_size": obj.file_size,
                 "disk_size": obj.disk_size,
-                "meta": obj.user_meta,
+                "meta": obj.meta,
                 "encrypt_algo": obj.encrypt_algo,
                 "compress_algo": obj.compress_algo,
                 "created_on": obj.created_on,
@@ -537,7 +540,7 @@ def get_shards_files(
                 "name": obj.name,
                 "file_size": obj.file_size,
                 "disk_size": obj.disk_size,
-                "meta": obj.user_meta,
+                "meta": obj.meta,
                 "encrypt_algo": obj.encrypt_algo,
                 "compress_algo": obj.compress_algo,
                 "created_on": obj.created_on,
@@ -667,6 +670,7 @@ def remove_shard_files(
     return skeys
 
 
+@transactional
 def get_zombie_and_orphan_files(
     session: Session,
     files_root: Path,
@@ -702,6 +706,7 @@ def get_zombie_and_orphan_files(
     return (z, o)
 
 
+@transactional
 def get_zombie_and_orphan_shard_files(        # pylint: disable=too-many-locals
     session: Session,
     shards_root: Path,
@@ -753,5 +758,15 @@ def get_zombie_and_orphan_shard_files(        # pylint: disable=too-many-locals
                 )
 
     return (z, o)
+
+
+@transactional
+def exec_query(
+    session: Session,
+    query: SelectBase
+) -> set[Any]:
+    return set(
+        session.scalars(query).all()
+    )
 
 

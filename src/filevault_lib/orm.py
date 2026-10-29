@@ -31,7 +31,7 @@ from filevault_lib.sqla import Base
 from filevault_lib.utils import (
     generate_key,
 )
-from filevault_lib.types import (
+from filevault_lib.fvtypes import (
     KeyringRef,
     CompressAlgo,
     EncryptAlgo,
@@ -105,7 +105,7 @@ class FileAttrs:                       # pylint: disable=too-few-public-methods
         nullable=False,
         server_default="{}"
     )
-    user_meta: Mapped[dict] = mapped_column(
+    meta: Mapped[dict] = mapped_column(
         JSON,
         nullable=False,
         server_default="{}"

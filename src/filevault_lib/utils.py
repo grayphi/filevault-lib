@@ -17,8 +17,10 @@ import zlib
 import bz2
 import lzma
 import struct
-from io import BytesIO
-from zipfile import ZIP_STORED, ZipFile
+from io import BytesIO, UnsupportedOperation
+from zipfile import ZIP_STORED, ZipFile, BadZipFile
+from datetime import datetime
+import shutil
 
 from pydantic import SecretStr
 from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
@@ -26,7 +28,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
 from filevault_lib.config import Constants
-from filevault_lib.types import (
+from filevault_lib.fvtypes import (
     CompressAlgo,
     EncryptAlgo,
     BytesStream,
@@ -625,15 +627,17 @@ def _save_as_shard_file(                   # pylint: disable=too-many-arguments
 
     frel = frel.relative_to(shards_root)
 
-    with ZipFile(shard, mode="r") as archive:
-        n = max((
-            int(f.name.partition("-")[2] or 0)
-            for name in archive.namelist()
-                if (f := Path(name)).parent == frel.parent
-                and f.name.partition("-")[0] == frel.name.partition("-")[0]
-            ),
-            default=0,
-        )
+    n = 0
+    if Path(shard).exists():
+        with ZipFile(shard, mode="r") as archive:
+            n = max((
+                int(f.name.partition("-")[2] or 0)
+                for name in archive.namelist()
+                    if (f := Path(name)).parent == frel.parent
+                    and f.name.partition("-")[0] == frel.name.partition("-")[0]
+                ),
+                default=0,
+            )
     n = f"{n + 1:02d}"
                                       # pylint: disable=consider-using-f-string
     frel = frel.parent / ("%s-%s" % (frel.name.partition("-")[0], n))
@@ -865,12 +869,13 @@ def is_file_in_shard(
 ) -> bool:
     file = file.as_posix() if isinstance(file, Path) else file
 
-    with ZipFile(shard, mode="r") as zf:
-        try:
-            zf.getinfo(file)
-            return True
-        except KeyError:
-            pass
+    if Path(shard).exists():
+        with ZipFile(shard, mode="r") as zf:
+            try:
+                zf.getinfo(file)
+                return True
+            except KeyError:
+                pass
     return False
 
 
@@ -940,18 +945,57 @@ def get_shard_file(
 
 
 def fetch_stream_properties(ds: Iterable[bytes]) -> dict:
-    # TODO
-    sm = {
-        "name": None,
-        "file_size": None,
-        "permission": None,
-        "ownership": None,
-        "created_on": None,
-        "modified_on": None,
-        "last_accessed_on": None,
-    }
+    def _fetch_stream_properties(
+        ds: Iterable[bytes],
+        iter_nest: bool = True
+    ) -> dict:
+        sm = {}
 
-    return sm
+        try:
+            stat = os.fstat(ds.fileno())
+        except (AttributeError, OSError, ValueError, UnsupportedOperation):
+            stat = None
+
+        if stat is not None:
+            sm["file_size"] = stat.st_size
+            sm["permission"] = stat.st_mode
+            sm["created_on"] = datetime.fromtimestamp(
+                stat.st_birthtime or stat.st_ctime
+            )
+            sm["modified_on"] = datetime.fromtimestamp(stat.st_mtime)
+            sm["last_accessed_on"] = datetime.fromtimestamp(stat.st_atime)
+            sm["ownership"] = f"{stat.st_uid}:{stat.st_gid}"
+
+        name = getattr(ds, "name", None)
+        if isinstance(name, (str, bytes, os.PathLike)):
+            sm["name"] = Path(os.fsdecode(name)).name
+
+        if hasattr(ds, "getbuffer"):
+            v = None
+            try:
+                v = ds.getbuffer()
+                sm["file_size"] = v.nbytes
+            finally:
+                v.release()
+
+        if iter_nest:
+            for attr in ("raw", "buffer", "fileobj", "_fileobj"):
+                if hasattr(ds, attr):
+                    cs = getattr(ds, attr, None)
+                    if cs is not None and cs is not ds:
+                        csp = _fetch_stream_properties(cs, False)
+                        if csp is not None:
+                            sm.update({
+                                k:v for k, v in csp.items() if v is not None
+                            })
+
+        return {
+            key: value
+            for key, value in sm.items()
+            if value is not None
+        }
+
+    return _fetch_stream_properties(ds, True)
 
 
 def save_stream(                           # pylint: disable=too-many-arguments
@@ -1055,5 +1099,32 @@ def iter_files(root: Path) -> Iterator[Path]:
     for r, _, fl in os.walk(root):
         for f in fl:
             yield (Path(r) / f).relative_to(root)
+
+
+def reclaim_shard_space(
+    shard: Path,
+    root: Path,
+) -> bool:
+    if sys.version_info[:2] >= (3, 16):
+        return True
+
+    shard_path = root / shard
+    tmp_path = shard_path.with_suffix(shard_path.suffix + ".tmp")
+
+    try:
+        with ZipFile(shard_path, "r") as src:
+            with ZipFile(tmp_path, "w") as dst:
+                for name in src.namelist():
+                    with src.open(name, "r") as source:
+                        with dst.open(name, "w") as target:
+                            shutil.copyfileobj(source, target)
+
+        os.replace(tmp_path, shard_path)
+        return True
+    except (OSError, BadZipFile, RuntimeError, ValueError):
+        return False
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
 
 

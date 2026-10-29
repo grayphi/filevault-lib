@@ -1,6 +1,6 @@
 [project]
 name = "filevault-lib"
-version = "0.2.0"
+version = "0.3.0"
 description = "A local, serverless key-value object store for efficiently storing files and binary objects on disk, with automatic storage management and no running server required."
 readme = "README.md"
 authors = [
@@ -22,7 +22,7 @@ Source = "https://github.com/grayphi/filevault-lib"
 [project.scripts]
 
 [build-system]
-requires = ["uv_build>=0.12.15,<0.13.0"]
+requires = ["uv_build>=0.12.15,<0.14.0"]
 build-backend = "uv_build"
 
 [dependency-groups]

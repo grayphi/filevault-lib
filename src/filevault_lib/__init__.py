@@ -10,9 +10,17 @@ from filevault_lib.utils import (
     CompressAlgo,
     EncryptAlgo,
 )
+from filevault_lib.querylang import (
+    Type,
+    Query,
+    and_,
+    or_,
+    not_,
+    col,
+)
 
 
 logger = logging.getLogger(__name__)
 
 
-__VERSION__ = "0.2.0"
+__VERSION__ = "0.3.0"

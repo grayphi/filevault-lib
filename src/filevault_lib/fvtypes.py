@@ -7,9 +7,16 @@ import logging
 from enum import Enum
 from collections.abc import Iterable, Iterator
 from pathlib import Path
-from typing import Any, TypeAlias
+from typing import Any, TypeAlias, TYPE_CHECKING
 
 from pydantic import SecretStr
+
+if TYPE_CHECKING:
+    from filevault_lib.orm import (
+        ObjectsTable,
+        FilesTable,
+        ShardsTable
+    )
 
 
 logger = logging.getLogger(__name__)
@@ -61,6 +68,8 @@ class BytesStream:                     # pylint: disable=too-few-public-methods
         del self._buffer[:size]
         return result
 
+
+VaultType: TypeAlias = "ObjectsTable | FilesTable | ShardsTable"
 
 DataInItem: TypeAlias = str | bytes | Path | Iterable[bytes]
 DataInType: TypeAlias = DataInItem | list[DataInItem]

@@ -25,7 +25,7 @@ from filevault_lib.config import (
     load_config_for,
     save_config_to,
 )
-from filevault_lib.types import (
+from filevault_lib.fvtypes import (
     CompressAlgo,
     EncryptAlgo,
     DataInType,
@@ -49,6 +49,7 @@ from filevault_lib.utils import (
     fetch_stream_properties,
     del_files,
     del_shard_files,
+    reclaim_shard_space,
 )
 from filevault_lib.exceptions import (
     InvalidVaultKey,
@@ -83,7 +84,10 @@ from filevault_lib.db import (
     get_zombie_and_orphan_files,
     get_zombie_and_orphan_shard_files,
     get_dirty_shards,
+    exec_query,
+    record_shard_clean,
 )
+from filevault_lib.querylang import Query
 
 
 logger = logging.getLogger(__name__)
@@ -556,7 +560,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                             disk_size=(
                                 self.get_files_root() / df_
                             ).stat().st_size,
-                            user_meta=um,
+                            meta=um,
                             encrypt_algo=ea,
                             compress_algo=ca,
                             enc_params=ep,
@@ -585,7 +589,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                                 self.get_shards_root() / df_s,
                                 df_
                             ),
-                            user_meta=um,
+                            meta=um,
                             encrypt_algo=ea,
                             compress_algo=ca,
                             enc_params=ep,
@@ -637,7 +641,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                             disk_size=(
                                 self.get_files_root() / df_
                             ).stat().st_size,
-                            user_meta=um,
+                            meta=um,
                             encrypt_algo=ea,
                             compress_algo=ca,
                             enc_params=ep,
@@ -666,7 +670,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                                 self.get_shards_root() / df_s,
                                 df_
                             ),
-                            user_meta=um,
+                            meta=um,
                             encrypt_algo=ea,
                             compress_algo=ca,
                             enc_params=ep,
@@ -986,12 +990,14 @@ class Vault:                          # pylint: disable=too-many-public-methods
                     shard=s
                 )
 
-        if sys.version_info[:2] < (3, 16):
-            with get_session_from(self._session_local) as session:
-                for ds in get_dirty_shards(session):
-                    # TODO reclaim deleted file space from dirty shards, and
-                    #  mark shard as clean
-                    pass
+        with get_session_from(self._session_local) as session:
+            for ds in get_dirty_shards(session):
+                flag = reclaim_shard_space(
+                    shard=ds,
+                    root=self.get_shards_root()
+                )
+                if flag:
+                    record_shard_clean(session, ds)
 
         logger.info("ENDS SYNCING...")
 
@@ -1038,6 +1044,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
         target.mkdir(parents=True, exist_ok=True)
 
         close_stream = source != "-"
+                                          # pylint: disable=consider-using-with
         input_stream = open(source, "rb") if close_stream else sys.stdin.buffer
 
         try:
@@ -1098,13 +1105,23 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 input_stream.close()
 
 
-    def query(self):
+    def query(self, query: Query) -> set[str]:
         if not self.is_created:
             raise VaultNotCreatedError("Vault is not created yet.")
 
         if not self.is_open:
             raise VaultNotOpenError("Vault is not open.")
 
+        if not (query and isinstance(query, Query)):
+            raise ValueError("Invalid Query provided.")
+
+        with get_session_from(self._session_local) as session:
+            keys = exec_query(
+                session=session,
+                query=query.to_sqla()
+            )
+
+        return set(keys)
 
     def shell(self):
         raise NotImplementedError
