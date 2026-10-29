@@ -16,6 +16,7 @@ from sqlalchemy import (
     and_ as sa_and,
     not_ as sa_not,
     or_ as sa_or,
+    Column as SAColumn,
 )
 
 from filevault_lib.fvtypes import VaultType
@@ -50,61 +51,61 @@ class Expr:
         if cls not in [ObjectsTable, FilesTable, ShardsTable]:
             raise TypeError("Invalid class provided.")
 
-        if self.rvalue is None:
-            raise ValueError("expected rvalue.")
-
         if self.op == "and":
-            return sa_and(rv.compile(cls) for rv in self.rvalue)
+            return sa_and(*(rv.compile(cls) for rv in self.rvalue))
         if self.op == "or":
-            return sa_or(rv.compile(cls) for rv in self.rvalue)
+            return sa_or(*(rv.compile(cls) for rv in self.rvalue))
         if self.op == "not":
             return sa_not(self.rvalue.compile(cls))
 
         if self.lvalue is None or not isinstance(self.lvalue, Column):
             raise ValueError("missing or invalid lvalue.")
 
+        column = self.lvalue.compile(cls)
+        value = self.rvalue
+
         if self.op == "lt":
-            return self.lvalue.compile(cls) < self.rvalue
+            return column < value
         if self.op == "gt":
-            return self.lvalue.compile(cls) > self.rvalue
+            return column > value
         if self.op == "le":
-            return self.lvalue.compile(cls) <= self.rvalue
+            return column <= value
         if self.op == "ge":
-            return self.lvalue.compile(cls) >= self.rvalue
+            return column >= value
         if self.op == "eq":
-            return self.lvalue.compile(cls) == self.rvalue
+            return column.is_(None) if value is None else column == value
         if self.op == "ne":
-            return self.lvalue.compile(cls) != self.rvalue
+            return column.is_not(None) if value is None else column != value
         if self.op == "in":
-            return self.lvalue.compile(cls).in_(self.rvalue)
+            return column.in_(value)
         if self.op == "not in":
-            return self.lvalue.compile(cls).not_in(self.rvalue)
+            return column.not_in(value)
         if self.op == "like":
-            return self.lvalue.compile(cls).like(self.rvalue)
+            return column.like(value)
         if self.op == "ilike":
-            return self.lvalue.compile(cls).ilike(self.rvalue)
+            return column.ilike(value)
         if self.op == "between":
-            return self.lvalue.compile(cls).between(*self.rvalue)
+            return column.between(*value)
         if self.op == "is":
-            return self.lvalue.compile(cls).is_(self.rvalue)
+            return column.is_(value)
         if self.op == "is not":
-            return self.lvalue.compile(cls).is_not(self.rvalue)
+            return column.is_not(value)
         if self.op == "startswith":
-            return self.lvalue.compile(cls).startswith(self.rvalue)
+            return column.startswith(value)
         if self.op == "istartswith":
-            return self.lvalue.compile(cls).istartswith(self.rvalue)
+            return column.istartswith(value)
         if self.op == "not ilike":
-            return self.lvalue.compile(cls).not_ilike(self.rvalue)
+            return column.not_ilike(value)
         if self.op == "not like":
-            return self.lvalue.compile(cls).not_like(self.rvalue)
+            return column.not_like(value)
         if self.op == "icontains":
-            return self.lvalue.compile(cls).icontains(self.rvalue)
+            return column.icontains(value)
         if self.op == "contains":
-            return self.lvalue.compile(cls).contains(self.rvalue)
+            return column.contains(value)
         if self.op == "endswith":
-            return self.lvalue.compile(cls).endswith(self.rvalue)
+            return column.endswith(value)
         if self.op == "iendswith":
-            return self.lvalue.compile(cls).iendswith(self.rvalue)
+            return column.iendswith(value)
 
         raise ValueError(f"Unsupported operator: {self.op}")
 
@@ -112,20 +113,20 @@ class Expr:
 class Column:
     _name: str
 
-    # FIXME meta column
     def __init__(self, name: str):
         if not (name and isinstance(name, str)):
             raise ValueError("Column name must be a non-empty string")
         self._name = name
 
-    def compile(self, cls: VaultType) -> str:
+    def compile(self, cls: VaultType) -> SAColumn:
         if cls not in [ObjectsTable, FilesTable, ShardsTable]:
             raise TypeError("Invalid class provided.")
 
+        # FIXME meta column
         if self._name not in cls.__table__.columns.keys():
             raise ValueError(f"Unknown column: {self._name}")
 
-        return cls.__table__.columns.get(self._name)
+        return getattr(cls, self._name)
 
     def __lt__(self, value: Any) -> Expr:
         return Expr(self, "lt", value)
@@ -192,18 +193,19 @@ class Column:
 
 
 class Query:
-    _type: Type = Type.ANY
-    _condition: Expr | None = None
+    def __init__(self):
+        self._type = Type.ANY
+        self._condition = None
 
     def on(self, target: Type) -> Query:
-        if not (target or isinstance(target, Type)):
+        if not isinstance(target, Type):
             raise TypeError("target must be a Type value")
         self._type = target
 
         return self
 
     def where(self, condition: Expr) -> Query:
-        if condition and not isinstance(condition, Expr):
+        if not isinstance(condition, Expr):
             raise TypeError("where() requires an expression")
         self._condition = condition
 
@@ -211,25 +213,19 @@ class Query:
 
     def to_sqla(self) -> SelectBase:
         stmts = []
-        _stmts = []
 
-        if self._type is Type.DATA or self._type is Type.ANY:
-            _stmts += [{
-                ObjectsTable: select(ObjectsTable.key)}
+        if self._type is Type.DATA:
+            models = (ObjectsTable,)
+        elif self._type is Type.FILES:
+            models = (FilesTable, ShardsTable)
+        else:
+            models = (ObjectsTable, FilesTable, ShardsTable)
+
+        for m in models:
+            stmts += [
+                select(m.key).where(self._condition.compile(m))
+                    if self._condition else select(m.key)
             ]
-
-        if self._type is Type.FILES or self._type is Type.ANY:
-            _stmts += [
-                {FilesTable: select(FilesTable.key)},
-                {ShardsTable: select(ShardsTable.key)}
-            ]
-
-        for _p in _stmts:
-            for t, s in _p.items():
-                stmts += [s]
-                if self._condition:
-                    self._condition.compile(t)
-
 
         return union(*stmts) if len(stmts) > 1 else stmts[0]
 

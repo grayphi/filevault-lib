@@ -625,15 +625,17 @@ def _save_as_shard_file(                   # pylint: disable=too-many-arguments
 
     frel = frel.relative_to(shards_root)
 
-    with ZipFile(shard, mode="r") as archive:
-        n = max((
-            int(f.name.partition("-")[2] or 0)
-            for name in archive.namelist()
-                if (f := Path(name)).parent == frel.parent
-                and f.name.partition("-")[0] == frel.name.partition("-")[0]
-            ),
-            default=0,
-        )
+    n = 0
+    if Path(shard).exists():
+        with ZipFile(shard, mode="r") as archive:
+            n = max((
+                int(f.name.partition("-")[2] or 0)
+                for name in archive.namelist()
+                    if (f := Path(name)).parent == frel.parent
+                    and f.name.partition("-")[0] == frel.name.partition("-")[0]
+                ),
+                default=0,
+            )
     n = f"{n + 1:02d}"
                                       # pylint: disable=consider-using-f-string
     frel = frel.parent / ("%s-%s" % (frel.name.partition("-")[0], n))
@@ -865,12 +867,13 @@ def is_file_in_shard(
 ) -> bool:
     file = file.as_posix() if isinstance(file, Path) else file
 
-    with ZipFile(shard, mode="r") as zf:
-        try:
-            zf.getinfo(file)
-            return True
-        except KeyError:
-            pass
+    if Path(shard).exists():
+        with ZipFile(shard, mode="r") as zf:
+            try:
+                zf.getinfo(file)
+                return True
+            except KeyError:
+                pass
     return False
 
 
