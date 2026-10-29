@@ -85,6 +85,7 @@ from filevault_lib.db import (
     get_zombie_and_orphan_shard_files,
     get_dirty_shards,
     exec_query,
+    record_shard_clean,
 )
 from filevault_lib.querylang import Query
 
