@@ -31,7 +31,7 @@ from filevault_lib.sqla import Base
 from filevault_lib.utils import (
     generate_key,
 )
-from filevault_lib.types import (
+from filevault_lib.fvtypes import (
     KeyringRef,
     CompressAlgo,
     EncryptAlgo,

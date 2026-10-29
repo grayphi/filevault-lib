@@ -25,7 +25,7 @@ from filevault_lib.config import (
     load_config_for,
     save_config_to,
 )
-from filevault_lib.types import (
+from filevault_lib.fvtypes import (
     CompressAlgo,
     EncryptAlgo,
     DataInType,
@@ -83,7 +83,9 @@ from filevault_lib.db import (
     get_zombie_and_orphan_files,
     get_zombie_and_orphan_shard_files,
     get_dirty_shards,
+    exec_query,
 )
+from filevault_lib.querylang import Query
 
 
 logger = logging.getLogger(__name__)
@@ -1038,6 +1040,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
         target.mkdir(parents=True, exist_ok=True)
 
         close_stream = source != "-"
+                                          # pylint: disable=consider-using-with
         input_stream = open(source, "rb") if close_stream else sys.stdin.buffer
 
         try:
@@ -1098,13 +1101,23 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 input_stream.close()
 
 
-    def query(self):
+    def query(self, query: Query) -> set[str]:
         if not self.is_created:
             raise VaultNotCreatedError("Vault is not created yet.")
 
         if not self.is_open:
             raise VaultNotOpenError("Vault is not open.")
 
+        if not (query and isinstance(query, Query)):
+            raise ValueError("Invalid Query provided.")
+
+        with get_session_from(self._session_local) as session:
+            keys = exec_query(
+                session=session,
+                query=query.to_sqla()
+            )
+
+        return set(keys)
 
     def shell(self):
         raise NotImplementedError

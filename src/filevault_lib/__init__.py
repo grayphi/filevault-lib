@@ -10,6 +10,14 @@ from filevault_lib.utils import (
     CompressAlgo,
     EncryptAlgo,
 )
+from filevault_lib.querylang import (
+    Type,
+    Query,
+    and_,
+    or_,
+    not_,
+    col,
+)
 
 
 logger = logging.getLogger(__name__)

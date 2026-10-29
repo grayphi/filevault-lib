@@ -26,7 +26,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
 from filevault_lib.config import Constants
-from filevault_lib.types import (
+from filevault_lib.fvtypes import (
     CompressAlgo,
     EncryptAlgo,
     BytesStream,
