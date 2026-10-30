@@ -315,7 +315,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 set_status(session, "open")
         else:
             logger.warning("vault was not properly closed")
-            # FIXME
+            # TODO
 
 
     @property
@@ -907,7 +907,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 for _, i, _ in sfkt_:
                     record_shard_dirty(
                         session=session,
-                        shard=self.get_shards_root() / i
+                        shard=i
                     )
                 status.update(
                     dict(

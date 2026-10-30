@@ -1121,7 +1121,8 @@ def reclaim_shard_space(
 
         os.replace(tmp_path, shard_path)
         return True
-    except (OSError, BadZipFile, RuntimeError, ValueError):
+    except (OSError, BadZipFile, RuntimeError, ValueError) as e:
+        logger.exception(e)
         return False
     finally:
         if tmp_path.exists():
