@@ -1031,16 +1031,32 @@ class Vault:                          # pylint: disable=too-many-public-methods
         if destination == "-":
             write_archive(sys.stdout.buffer)
         else:
-            with open(destination, "wb") as output:
+            p = Path(destination)
+            if p.is_dir():
+                p = p / f"fv_export_{int(datetime.now().timestamp())}.vault"
+            else:
+                p = Path(
+                    p.parent /
+                    f"fv_export_{int(datetime.now().timestamp())}.vault"
+                )
+
+            with open(p, "wb") as output:
                 write_archive(output)
 
-
+    @staticmethod
     def import_vault(
-        self,
         source: str = "-",
         container: str | Path | None = None,
     ) -> None:
-        target = Path(container or self.get_container())
+        def _strip_root(member, path):
+            member = tarfile.data_filter(member, path)
+            if member is None:
+                return None
+            parts = Path(member.name).parts
+            member.name = str(Path(*parts[1:])) if len(parts) > 1 else "."
+            return member
+
+        target = Path(container)
         target.mkdir(parents=True, exist_ok=True)
 
         close_stream = source != "-"
@@ -1062,6 +1078,24 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 with config_file:
                     config = json.load(config_file)
 
+                uuid_old = config.get("UUID")
+
+                config["CONTAINER"] = target.as_posix()
+                config["UUID"] = get_vault_uuid(
+                    key=config.get("KEY"),
+                    container=Path(config.get("CONTAINER")),
+                    namespace=config.get("NAMESPACE")
+                )
+
+                with open(target / "fv_conf.vaultconf", "w") as fvconf:
+                    fvconf.write(f"[{config.get('KEY')}]\n")
+                    for k, v in config.items():
+                        if k == "KEY":
+                            continue
+                        if isinstance(v, str):
+                            v = f'"{v}"'
+                        fvconf.write(f"{k} = {v}\n")
+
                 uuid = config.get("UUID")
                 if not isinstance(uuid, str) or not uuid:
                     raise ValueError("Missing or invalid vault UUID in config")
@@ -1078,13 +1112,13 @@ class Vault:                          # pylint: disable=too-many-public-methods
                         path.is_absolute()
                         or ".." in path.parts
                         or not path.parts
-                        or path.parts[0] != uuid
+                        or path.parts[0] != uuid_old
                     ):
                         raise ValueError(
                             f"Invalid archive member: {member.name}"
                         )
 
-                    relative = path.relative_to(uuid)
+                    relative = path.relative_to(uuid_old)
                     if (
                         not relative.parts
                         or relative.parts[0] not in {
@@ -1099,7 +1133,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                             f"Unexpected archive member: {member.name}"
                         )
 
-                    archive.extract(member, target, filter="data")
+                    archive.extract(member, vault_root, filter=_strip_root)
         finally:
             if close_stream:
                 input_stream.close()
