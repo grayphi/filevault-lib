@@ -79,7 +79,7 @@ def load_config_for(key: str, file: Path | str) -> ConfigManager:
 
     if not (file.exists()
         and file.is_file()
-        and file.suffix in [".vault", ".toml"]
+        and file.suffix in [".vaultconf", ".toml"]
     ):
         raise InvalidConfigFile("Configuration file supplied is not valid.")
 
