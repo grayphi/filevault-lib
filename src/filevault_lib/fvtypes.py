@@ -44,6 +44,7 @@ class EncryptAlgo(str, Enum):
     AES_GCM = "aes-gcm"
     CHACHA20_POLY1305 = "chacha20-poly1305"
 
+
 class BytesStream:                     # pylint: disable=too-few-public-methods
     def __init__(self, data: Iterable[bytes]):
         self._data: Iterator[bytes] = iter(data)

@@ -315,7 +315,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 set_status(session, "open")
         else:
             logger.warning("vault was not properly closed")
-            # FIXME
+            # TODO
 
 
     @property
