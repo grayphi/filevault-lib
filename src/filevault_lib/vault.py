@@ -1139,7 +1139,7 @@ class Vault:                          # pylint: disable=too-many-public-methods
                 input_stream.close()
 
 
-    def query(self, query: Query) -> set[str]:
+    def query(self, query: Query) -> list[str]:
         if not self.is_created:
             raise VaultNotCreatedError("Vault is not created yet.")
 

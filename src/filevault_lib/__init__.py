@@ -24,5 +24,5 @@ from filevault_lib.querylang import (
 logger = logging.getLogger(__name__)
 
 
-__VERSION__ = "0.4.3"
+__VERSION__ = "0.4.4"
 
